@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全漏洞报告
+    url: https://github.com/thevipsong/slate/security/advisories/new
+    about: 请通过私密安全公告报告漏洞，不要在公开 Issue 中披露。
