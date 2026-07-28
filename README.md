@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Resources/AppIcon.icns" width="80" alt="Slate" />
+  <img src="generated-images/slate-icon-1024.png" width="96" alt="Slate App 图标" />
 </p>
 
 <h1 align="center">Slate</h1>
@@ -15,6 +15,9 @@
   <img src="https://img.shields.io/badge/swift-6.0-orange" alt="Swift" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
   <img src="https://img.shields.io/badge/tests-52%20passed-brightgreen" alt="Tests" />
+  <a href="https://github.com/thevipsong/slate/actions/workflows/ci.yml">
+    <img src="https://github.com/thevipsong/slate/actions/workflows/ci.yml/badge.svg" alt="CI" />
+  </a>
 </p>
 
 ---
@@ -121,7 +124,14 @@ Slate/
 │   └── run-tests.sh                      # CLT 兼容测试脚本
 ├── Resources/
 │   └── AppIcon.icns                      # App 图标
+├── .github/
+│   ├── workflows/ci.yml                  # GitHub Actions 持续集成
+│   ├── ISSUE_TEMPLATE/                   # Bug / 功能建议模板
+│   └── pull_request_template.md          # Pull Request 检查清单
 ├── Dist/                                 # 打包产物 (gitignored)
+├── CHANGELOG.md                          # 版本变更记录
+├── CONTRIBUTING.md                       # 贡献指南
+├── SECURITY.md                           # 安全问题报告方式
 ├── Package.swift
 └── README.md
 ```
@@ -152,7 +162,8 @@ Slate/
 
 ## 🤝 Contributing
 
-欢迎 Pull Request。大改动请先提 Issue 讨论方向。
+欢迎 Issue 和 Pull Request。完整的开发流程、代码规范和提交检查清单请参阅
+[CONTRIBUTING.md](CONTRIBUTING.md)。
 
 1. Fork 本仓库
 2. 创建 Feature 分支 (`git checkout -b feature/amazing-idea`)
@@ -165,6 +176,13 @@ Slate/
 ```bash
 ./Scripts/run-tests.sh
 ```
+
+---
+
+## 🔐 Security
+
+请不要在公开 Issue 中披露安全漏洞或包含私人待办数据的截图。安全问题请按照
+[SECURITY.md](SECURITY.md) 中的方式私下报告。
 
 ---
 
