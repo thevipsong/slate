@@ -43,7 +43,9 @@
 ### Android APK
 
 Android 版位于 [`android/`](android/)，使用 Kotlin + Jetpack Compose 原生开发，
-支持核心待办功能、本地提醒和与 macOS 版兼容的 JSON 导入导出。
+支持核心待办功能、本地提醒和与 macOS 版兼容的 JSON 导入导出。0.2.0
+重做了移动端交互：顶部紧凑布局、悬浮新增、按需展开搜索、任务编辑底部抽屉、
+左右滑动快捷操作，以及长按拖拽排序。
 
 ```bash
 ./Scripts/build-android.sh
@@ -180,6 +182,7 @@ Slate/
 - [x] 58 项自动化测试
 - [x] 到期日本地通知提醒
 - [x] Android 原生客户端基础版
+- [x] Android 紧凑首页、滑动操作、长按排序与底部抽屉编辑
 - [x] macOS / Android JSON 双向导入导出
 - [x] Mac / Android 可选 Supabase 自动同步
 - [ ] iCloud 同步（或在偏好中可选）

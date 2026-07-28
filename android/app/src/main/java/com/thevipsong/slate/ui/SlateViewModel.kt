@@ -186,6 +186,11 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleTodo(id: String) = launchMutation { repository.toggleTodo(id) }
     fun renameTodo(id: String, title: String) = launchMutation { repository.renameTodo(id, title) }
     fun setDueDate(id: String, date: Instant?) = launchMutation { repository.setDueDate(id, date) }
+    fun updateTodo(id: String, title: String, dueDate: Instant?, groupID: String) =
+        launchMutation {
+            repository.updateTodo(id, title, dueDate, groupID)
+            selectedItemID.value = null
+        }
     fun deleteTodo(id: String) = launchMutation {
         repository.deleteTodo(id)
         selectedItemID.value = null

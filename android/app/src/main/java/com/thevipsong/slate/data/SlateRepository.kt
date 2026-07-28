@@ -64,6 +64,33 @@ class SlateRepository(
         item.copy(dueDate = dueDate, updatedAt = Instant.now(), revision = revision)
     }
 
+    suspend fun updateTodo(
+        id: String,
+        title: String,
+        dueDate: Instant?,
+        targetGroupID: String
+    ) {
+        val cleanTitle = title.trim()
+        if (cleanTitle.isEmpty()) return
+        mutateItem(id) { item, revision ->
+            val moved = item.groupID != targetGroupID
+            val nextOrder = if (moved) {
+                _archive.value.items
+                    .filter { it.groupID == targetGroupID && !it.isDeleted }
+                    .maxOfOrNull { it.sortOrder ?: 0.0 }
+                    ?.plus(1.0) ?: 0.0
+            } else item.sortOrder
+            item.copy(
+                title = cleanTitle,
+                dueDate = dueDate,
+                groupID = targetGroupID,
+                sortOrder = nextOrder,
+                updatedAt = Instant.now(),
+                revision = revision
+            )
+        }
+    }
+
     suspend fun deleteTodo(id: String) = mutateItem(id) { item, revision ->
         item.copy(isDeleted = true, updatedAt = Instant.now(), revision = revision)
     }

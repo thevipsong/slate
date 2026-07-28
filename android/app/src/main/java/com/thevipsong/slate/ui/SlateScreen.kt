@@ -8,20 +8,27 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,6 +41,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -46,21 +55,17 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -68,10 +73,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,10 +92,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -102,9 +114,18 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -113,6 +134,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.thevipsong.slate.data.SlateThemeMode
 import com.thevipsong.slate.data.SlateTodoGroup
@@ -122,6 +146,7 @@ import com.thevipsong.slate.sync.SupabaseConfiguration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -133,8 +158,11 @@ fun SlateScreen(
     val snackbarHost = remember { SnackbarHostState() }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showAddGroup by rememberSaveable { mutableStateOf(false) }
+    var showAddTodo by rememberSaveable { mutableStateOf(false) }
+    var showSearch by rememberSaveable { mutableStateOf(false) }
     var showSyncSetup by rememberSaveable { mutableStateOf(false) }
     var groupToManage by remember { mutableStateOf<SlateTodoGroup?>(null) }
+    var editingItem by remember { mutableStateOf<SlateTodoItem?>(null) }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(viewModel::importArchive) }
@@ -157,7 +185,18 @@ fun SlateScreen(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0),
-        snackbarHost = { SnackbarHost(snackbarHost) }
+        snackbarHost = { SnackbarHost(snackbarHost) },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showAddTodo = true },
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .semantics { contentDescription = "添加新任务" },
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+            }
+        }
     ) { contentPadding ->
         Box(
             Modifier
@@ -182,6 +221,8 @@ fun SlateScreen(
             ) {
                 SlateHeader(
                     state = state,
+                    searchActive = showSearch || state.search.isNotBlank(),
+                    onSearch = { showSearch = !showSearch },
                     onSettings = { showSettings = true }
                 )
                 GroupStrip(
@@ -191,14 +232,23 @@ fun SlateScreen(
                     onManage = { groupToManage = it },
                     onAdd = { showAddGroup = true }
                 )
-                TodoComposer(
-                    onAdd = viewModel::addTodo
-                )
-                FilterAndSearch(
+                AnimatedVisibility(
+                    visible = showSearch || state.search.isNotBlank(),
+                    enter = fadeIn() + slideInVertically { -it / 2 },
+                    exit = fadeOut() + slideOutVertically { -it / 2 }
+                ) {
+                    SearchField(
+                        search = state.search,
+                        onSearch = viewModel::setSearch,
+                        onClose = {
+                            viewModel.setSearch("")
+                            showSearch = false
+                        }
+                    )
+                }
+                CompactFilterBar(
                     selected = state.filter,
-                    search = state.search,
-                    onFilter = viewModel::setFilter,
-                    onSearch = viewModel::setSearch
+                    onFilter = viewModel::setFilter
                 )
 
                 if (state.visibleItems.isEmpty()) {
@@ -209,19 +259,55 @@ fun SlateScreen(
                 } else {
                     TodoList(
                         items = state.visibleItems,
-                        groups = state.groups,
-                        selectedID = state.selectedItemID,
-                        onSelect = viewModel::selectTodo,
                         onToggle = viewModel::toggleTodo,
-                        onRename = viewModel::renameTodo,
-                        onDate = viewModel::setDueDate,
-                        onMove = viewModel::moveTodo,
                         onDelete = viewModel::deleteTodo,
                         onReorder = viewModel::reorderTodo,
+                        onEdit = { item ->
+                            viewModel.selectTodo(item.id)
+                            editingItem = item
+                        },
                         modifier = Modifier.weight(1f)
                     )
                 }
             }
+        }
+    }
+
+    if (showAddTodo) {
+        AddTodoSheet(
+            onDismiss = { showAddTodo = false },
+            onAdd = { title, dueDate ->
+                viewModel.addTodo(title, dueDate)
+                showAddTodo = false
+            }
+        )
+    }
+
+    editingItem?.let { item ->
+        val currentItem = state.archive.items.firstOrNull { it.id == item.id && !it.isDeleted }
+        if (currentItem == null) {
+            editingItem = null
+        } else {
+            TaskEditorSheet(
+                item = currentItem,
+                groups = state.groups,
+                onDismiss = {
+                    editingItem = null
+                    viewModel.selectTodo(currentItem.id)
+                },
+                onSave = { title, dueDate, groupID ->
+                    viewModel.updateTodo(currentItem.id, title, dueDate, groupID)
+                    editingItem = null
+                },
+                onToggle = {
+                    viewModel.toggleTodo(currentItem.id)
+                    editingItem = null
+                },
+                onDelete = {
+                    viewModel.deleteTodo(currentItem.id)
+                    editingItem = null
+                }
+            )
         }
     }
 
@@ -303,6 +389,8 @@ fun SlateScreen(
 @Composable
 private fun SlateHeader(
     state: SlateUiState,
+    searchActive: Boolean,
+    onSearch: () -> Unit,
     onSettings: () -> Unit
 ) {
     val date = remember {
@@ -313,33 +401,43 @@ private fun SlateHeader(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .padding(start = 20.dp, top = 10.dp, end = 10.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                "Slate",
-                fontSize = 30.sp,
-                lineHeight = 34.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.8).sp
-            )
-            Text(
-                "熟能生巧。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 14.sp
+        Text(
+            "Slate",
+            fontSize = 28.sp,
+            lineHeight = 32.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.8).sp
+        )
+        Text(
+            "$date · ${state.pendingCount}项待完成",
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 14.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        IconButton(
+            onClick = onSearch,
+            modifier = Modifier.size(48.dp)
+        ) {
+            Icon(
+                Icons.Default.Search,
+                contentDescription = if (searchActive) "收起搜索" else "搜索",
+                tint = if (searchActive) {
+                    MaterialTheme.colorScheme.primary
+                } else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(date, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-            Text(
-                "${state.pendingCount} 项待办 · 共 ${state.totalCount} 项",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
-            )
-        }
-        Spacer(Modifier.width(6.dp))
-        IconButton(onClick = onSettings) {
+        IconButton(
+            onClick = onSettings,
+            modifier = Modifier.size(48.dp)
+        ) {
             Icon(Icons.Default.Settings, contentDescription = "设置")
         }
     }
@@ -354,15 +452,20 @@ private fun GroupStrip(
     onAdd: () -> Unit
 ) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 20.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(groups, key = SlateTodoGroup::id) { group ->
             val selected = group.id == selectedID
             FilterChip(
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                 selected = selected,
-                onClick = { onSelect(group.id) },
+                onClick = {
+                    if (selected) onManage(group) else onSelect(group.id)
+                },
                 label = {
                     Text(
                         group.name,
@@ -383,9 +486,7 @@ private fun GroupStrip(
                         Icon(
                             Icons.Default.MoreHoriz,
                             contentDescription = "管理分组",
-                            modifier = Modifier
-                                .size(18.dp)
-                                .clickable { onManage(group) }
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 } else null
@@ -394,7 +495,7 @@ private fun GroupStrip(
         item {
             FilledIconButton(
                 onClick = onAdd,
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(Icons.Default.Add, contentDescription = "添加分组")
             }
@@ -443,67 +544,84 @@ private fun GroupManageDialog(
 }
 
 @Composable
-private fun TodoComposer(onAdd: (String, Instant?) -> Unit) {
+private fun AddTodoSheet(
+    onDismiss: () -> Unit,
+    onAdd: (String, Instant?) -> Unit
+) {
     val focusManager = LocalFocusManager.current
     var title by rememberSaveable { mutableStateOf("") }
     var dueDate by rememberSaveable { mutableStateOf<Instant?>(null) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     fun submit() {
         if (title.isBlank()) return
         onAdd(title, dueDate)
-        title = ""
-        dueDate = null
         focusManager.clearFocus()
     }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
-        Row(
-            Modifier.padding(start = 16.dp, top = 6.dp, end = 8.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 22.dp)
+                .padding(bottom = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            Text("新建任务", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "先记下来，日期可以稍后再补充。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp
+            )
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("添加新任务…") },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("任务标题") },
+                placeholder = { Text("例如：提交报销材料") },
                 singleLine = true,
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(16.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { submit() })
             )
-            IconButton(onClick = { showDatePicker = true }) {
-                Icon(
-                    Icons.Default.CalendarMonth,
-                    contentDescription = "设置日期",
-                    tint = if (dueDate == null) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else MaterialTheme.colorScheme.primary
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilledTonalButton(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                ) {
+                    Icon(Icons.Default.CalendarMonth, null, Modifier.size(19.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (dueDate == null) "设置日期" else "修改日期")
+                }
+                Button(
+                    enabled = title.isNotBlank(),
+                    onClick = { submit() },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                ) {
+                    Text("添加任务")
+                }
+            }
+            dueDate?.let {
+                DueDateLabel(
+                    dueDate = it,
+                    onClear = { dueDate = null }
                 )
             }
-            Button(
-                enabled = title.isNotBlank(),
-                onClick = { submit() },
-                contentPadding = PaddingValues(horizontal = 15.dp)
-            ) {
-                Text("添加")
-            }
-        }
-        dueDate?.let {
-            DueDateLabel(
-                dueDate = it,
-                modifier = Modifier.padding(start = 18.dp, bottom = 10.dp),
-                onClear = { dueDate = null }
-            )
         }
     }
 
@@ -520,134 +638,263 @@ private fun TodoComposer(onAdd: (String, Instant?) -> Unit) {
 }
 
 @Composable
-private fun FilterAndSearch(
-    selected: TodoFilter,
+private fun SearchField(
     search: String,
-    onFilter: (TodoFilter) -> Unit,
-    onSearch: (String) -> Unit
+    onSearch: (String) -> Unit,
+    onClose: () -> Unit
 ) {
-    Column(Modifier.padding(horizontal = 20.dp)) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            val filters = listOf(
-                TodoFilter.ALL to "全部",
-                TodoFilter.PENDING to "待完成",
-                TodoFilter.COMPLETED to "已完成",
-                TodoFilter.OVERDUE to "逾期"
-            )
-            items(filters) { (filter, label) ->
-                FilterChip(
-                    selected = selected == filter,
-                    onClick = { onFilter(filter) },
-                    label = { Text(label) },
-                    leadingIcon = if (selected == filter) {
-                        { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
-                    } else null
-                )
+    OutlinedTextField(
+        value = search,
+        onValueChange = onSearch,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        placeholder = { Text("搜索当前分组") },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+        trailingIcon = {
+            IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "关闭搜索")
             }
-        }
-        OutlinedTextField(
-            value = search,
-            onValueChange = onSearch,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 6.dp, bottom = 10.dp),
-            placeholder = { Text("搜索当前分组") },
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            trailingIcon = if (search.isNotBlank()) {
-                {
-                    IconButton(onClick = { onSearch("") }) {
-                        Icon(Icons.Default.Close, contentDescription = "清除搜索")
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+@Composable
+private fun CompactFilterBar(
+    selected: TodoFilter,
+    onFilter: (TodoFilter) -> Unit
+) {
+    val filters = listOf(
+        TodoFilter.ALL to "全部",
+        TodoFilter.PENDING to "待完成",
+        TodoFilter.COMPLETED to "已完成",
+        TodoFilter.OVERDUE to "逾期"
+    )
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+    ) {
+        Row(
+            Modifier.padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            filters.forEach { (filter, label) ->
+                val isSelected = selected == filter
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                        .semantics {
+                            role = Role.Tab
+                            this.selected = isSelected
+                        },
+                    onClick = { onFilter(filter) },
+                    shape = RoundedCornerShape(13.dp),
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.surface
+                    } else Color.Transparent,
+                    tonalElevation = if (isSelected) 2.dp else 0.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            label,
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
                     }
                 }
-            } else null,
-            singleLine = true,
-            shape = RoundedCornerShape(16.dp)
-        )
+            }
+        }
     }
 }
 
 @Composable
 private fun TodoList(
     items: List<SlateTodoItem>,
-    groups: List<SlateTodoGroup>,
-    selectedID: String?,
-    onSelect: (String) -> Unit,
     onToggle: (String) -> Unit,
-    onRename: (String, String) -> Unit,
-    onDate: (String, Instant?) -> Unit,
-    onMove: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onReorder: (String, String) -> Unit,
+    onEdit: (SlateTodoItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val listState = rememberLazyListState()
+    val haptics = LocalHapticFeedback.current
+    var draggingID by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    var lastTargetID by remember { mutableStateOf<String?>(null) }
+
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp)
+        state = listState,
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 104.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(items, key = SlateTodoItem::id) { item ->
-            val index = items.indexOfFirst { it.id == item.id }
-            TodoCard(
-                item = item,
-                groups = groups,
-                selected = selectedID == item.id,
-                canMoveUp = index > 0,
-                canMoveDown = index < items.lastIndex,
-                onSelect = { onSelect(item.id) },
-                onToggle = { onToggle(item.id) },
-                onRename = { onRename(item.id, it) },
-                onDate = { onDate(item.id, it) },
-                onMove = { onMove(item.id, it) },
-                onDelete = { onDelete(item.id) },
-                onMoveUp = { onReorder(item.id, items[index - 1].id) },
-                onMoveDown = { onReorder(item.id, items[index + 1].id) }
-            )
+        itemsIndexed(items, key = { _, item -> item.id }) { _, item ->
+            val isDragging = draggingID == item.id
+            Box(
+                Modifier
+                    .zIndex(if (isDragging) 2f else 0f)
+                    .graphicsLayer {
+                        translationY = if (isDragging) dragOffset else 0f
+                        scaleX = if (isDragging) 1.015f else 1f
+                        scaleY = if (isDragging) 1.015f else 1f
+                        alpha = if (isDragging) 0.96f else 1f
+                    }
+                    .pointerInput(item.id, items.map(SlateTodoItem::id)) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                draggingID = item.id
+                                lastTargetID = item.id
+                                dragOffset = 0f
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            },
+                            onDragCancel = {
+                                draggingID = null
+                                lastTargetID = null
+                                dragOffset = 0f
+                            },
+                            onDragEnd = {
+                                draggingID = null
+                                lastTargetID = null
+                                dragOffset = 0f
+                            },
+                            onDrag = { change, amount ->
+                                change.consume()
+                                dragOffset += amount.y
+                                val layoutInfo = listState.layoutInfo
+                                val sourceInfo = layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.key == item.id }
+                                    ?: return@detectDragGesturesAfterLongPress
+                                val draggedCenter =
+                                    sourceInfo.offset + sourceInfo.size / 2f + dragOffset
+                                val target = layoutInfo.visibleItemsInfo.firstOrNull { visible ->
+                                    visible.key != item.id &&
+                                        draggedCenter >= visible.offset &&
+                                        draggedCenter <= visible.offset + visible.size
+                                }
+                                val targetID = target?.key as? String
+                                if (targetID != null && targetID != lastTargetID) {
+                                    onReorder(item.id, targetID)
+                                    lastTargetID = targetID
+                                    dragOffset = 0f
+                                    haptics.performHapticFeedback(
+                                        HapticFeedbackType.TextHandleMove
+                                    )
+                                }
+                            }
+                        )
+                    }
+            ) {
+                SwipeTodoCard(
+                    item = item,
+                    onToggle = { onToggle(item.id) },
+                    onDelete = { onDelete(item.id) },
+                    onEdit = { onEdit(item) }
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun TodoCard(
+private fun SwipeTodoCard(
     item: SlateTodoItem,
-    groups: List<SlateTodoGroup>,
-    selected: Boolean,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    onSelect: () -> Unit,
     onToggle: () -> Unit,
-    onRename: (String) -> Unit,
-    onDate: (Instant?) -> Unit,
-    onMove: (String) -> Unit,
     onDelete: () -> Unit,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit
+    onEdit: () -> Unit
 ) {
-    var showEdit by rememberSaveable { mutableStateOf(false) }
-    var showDate by rememberSaveable { mutableStateOf(false) }
-    var showMove by rememberSaveable { mutableStateOf(false) }
-    val container by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surface,
-        label = "selection"
+    @Suppress("DEPRECATION")
+    val dismissState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { distance -> distance * 0.34f },
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    onToggle()
+                    false
+                }
+                SwipeToDismissBoxValue.EndToStart -> {
+                    onDelete()
+                    true
+                }
+                SwipeToDismissBoxValue.Settled -> true
+            }
+        }
     )
-    val elevation by animateFloatAsState(if (selected) 4f else 0f, label = "elevation")
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onSelect),
-        colors = CardDefaults.cardColors(containerColor = container),
-        border = BorderStroke(
-            1.dp,
-            if (selected) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = elevation.dp),
-        shape = RoundedCornerShape(17.dp)
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            val direction = dismissState.dismissDirection
+            val completing = direction == SwipeToDismissBoxValue.StartToEnd
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        if (completing) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
+                    )
+                    .padding(horizontal = 20.dp),
+                contentAlignment = if (completing) {
+                    Alignment.CenterStart
+                } else Alignment.CenterEnd
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (completing) {
+                        Icon(Icons.Default.Check, contentDescription = null)
+                        Text(
+                            if (item.isCompleted) "恢复待办" else "完成",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    } else {
+                        Text(
+                            "删除",
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
     ) {
-        Column {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .animateContentSize()
+                .clickable(onClick = onEdit),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.58f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
             Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 72.dp)
+                    .padding(start = 10.dp, top = 8.dp, end = 14.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
@@ -662,12 +909,12 @@ private fun TodoCard(
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(2.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         item.title,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         textDecoration = if (item.isCompleted) {
@@ -679,99 +926,189 @@ private fun TodoCard(
                         DueDateText(dueDate = it, completed = item.isCompleted)
                     }
                 }
+                Spacer(Modifier.width(8.dp))
                 Icon(
-                    Icons.Default.MoreHoriz,
-                    contentDescription = null,
+                    Icons.Default.DragHandle,
+                    contentDescription = "长按拖拽排序",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.alpha(if (selected) 1f else 0.3f)
+                    modifier = Modifier
+                        .size(24.dp)
+                        .alpha(0.62f)
                 )
             }
-            AnimatedVisibility(visible = selected) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TaskEditorSheet(
+    item: SlateTodoItem,
+    groups: List<SlateTodoGroup>,
+    onDismiss: () -> Unit,
+    onSave: (String, Instant?, String) -> Unit,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var title by rememberSaveable(item.id) { mutableStateOf(item.title) }
+    var dueDate by rememberSaveable(item.id) { mutableStateOf(item.dueDate) }
+    var groupID by rememberSaveable(item.id) {
+        mutableStateOf(item.groupID ?: groups.first().id)
+    }
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 22.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("任务详情", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "修改标题、日期或所属分组",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp
+                    )
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "关闭")
+                }
+            }
+
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("任务标题") },
+                singleLine = false,
+                maxLines = 3,
+                shape = RoundedCornerShape(16.dp)
+            )
+
+            Text("到期日期", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilledTonalButton(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
                 ) {
-                    CompactAction(
-                        Icons.Default.KeyboardArrowUp,
-                        "上移",
-                        enabled = canMoveUp,
-                        onClick = onMoveUp
+                    Icon(Icons.Default.CalendarMonth, null, Modifier.size(19.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        dueDate?.atZone(ZoneId.systemDefault())?.toLocalDate()
+                            ?.format(DateTimeFormatter.ofPattern("M月d日"))
+                            ?: "设置日期"
                     )
-                    CompactAction(
-                        Icons.Default.KeyboardArrowDown,
-                        "下移",
-                        enabled = canMoveDown,
-                        onClick = onMoveDown
-                    )
-                    CompactAction(Icons.Default.CalendarMonth, "日期") { showDate = true }
-                    CompactAction(Icons.Default.Edit, "编辑") { showEdit = true }
-                    if (groups.size > 1) {
-                        CompactAction(Icons.Default.SwapHoriz, "移动") { showMove = true }
-                    }
-                    CompactAction(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error) {
-                        onDelete()
+                }
+                if (dueDate != null) {
+                    OutlinedButton(
+                        onClick = { dueDate = null },
+                        modifier = Modifier.height(48.dp)
+                    ) {
+                        Text("清除")
                     }
                 }
+            }
+
+            if (groups.size > 1) {
+                Text("所属分组", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    groups.forEach { group ->
+                        FilterChip(
+                            selected = groupID == group.id,
+                            onClick = { groupID = group.id },
+                            label = { Text(group.name) },
+                            leadingIcon = if (groupID == group.id) {
+                                {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = null,
+                                        Modifier.size(16.dp)
+                                    )
+                                }
+                            } else null
+                        )
+                    }
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = onToggle,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                ) {
+                    Icon(
+                        if (item.isCompleted) {
+                            Icons.Default.RadioButtonUnchecked
+                        } else Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(19.dp)
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    Text(if (item.isCompleted) "恢复待办" else "标记完成")
+                }
+                Button(
+                    enabled = title.isNotBlank(),
+                    onClick = { onSave(title.trim(), dueDate, groupID) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                ) {
+                    Text("保存修改")
+                }
+            }
+            TextButton(
+                onClick = onDelete,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(7.dp))
+                Text("删除任务", color = MaterialTheme.colorScheme.error)
             }
         }
     }
 
-    if (showEdit) {
-        TextEntryDialog(
-            title = "编辑任务",
-            initialValue = item.title,
-            confirmLabel = "保存",
-            onDismiss = { showEdit = false },
-            onConfirm = {
-                onRename(it)
-                showEdit = false
-            }
-        )
-    }
-    if (showDate) {
+    if (showDatePicker) {
         SlateDatePickerDialog(
-            initial = item.dueDate,
+            initial = dueDate,
             allowClear = true,
-            onDismiss = { showDate = false },
+            onDismiss = { showDatePicker = false },
             onConfirm = {
-                onDate(it)
-                showDate = false
+                dueDate = it
+                showDatePicker = false
             }
-        )
-    }
-    if (showMove) {
-        MoveGroupDialog(
-            groups = groups.filter { it.id != item.groupID },
-            onDismiss = { showMove = false },
-            onSelect = {
-                onMove(it)
-                showMove = false
-            }
-        )
-    }
-}
-
-@Composable
-private fun CompactAction(
-    icon: ImageVector,
-    label: String,
-    enabled: Boolean = true,
-    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    onClick: () -> Unit
-) {
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.size(38.dp)
-    ) {
-        Icon(
-            icon,
-            contentDescription = label,
-            tint = if (enabled) tint else tint.copy(alpha = 0.28f),
-            modifier = Modifier.size(19.dp)
         )
     }
 }
@@ -818,38 +1155,99 @@ private fun SlateDatePickerDialog(
     onDismiss: () -> Unit,
     onConfirm: (Instant?) -> Unit
 ) {
-    val initialMillis = initial?.toEpochMilli()
-    val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
-    DatePickerDialog(
+    val initialMillis = initial
+        ?.atZone(ZoneId.systemDefault())
+        ?.toLocalDate()
+        ?.atStartOfDay(ZoneOffset.UTC)
+        ?.toInstant()
+        ?.toEpochMilli()
+    val pickerState = rememberDatePickerState(
+        initialSelectedDateMillis = initialMillis,
+        initialDisplayedMonthMillis = initialMillis
+    )
+    val selectedLabel = pickerState.selectedDateMillis
+        ?.let(Instant::ofEpochMilli)
+        ?.atZone(ZoneId.of("UTC"))
+        ?.toLocalDate()
+        ?.format(DateTimeFormatter.ofPattern("yyyy年M月d日"))
+        ?: "尚未选择日期"
+
+    Dialog(
         onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val instant = pickerState.selectedDateMillis?.let(Instant::ofEpochMilli)
-                    onConfirm(instant)
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 22.dp, top = 18.dp, end = 10.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "选择日期",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            selectedLabel,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "关闭日期选择")
+                    }
                 }
-            ) { Text("确定") }
-        },
-        dismissButton = {
-            Row {
-                if (allowClear) {
-                    TextButton(onClick = { onConfirm(null) }) { Text("清除") }
+                DatePicker(
+                    state = pickerState,
+                    title = null,
+                    headline = null,
+                    showModeToggle = false,
+                    colors = DatePickerDefaults.colors(
+                        selectedDayContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedDayContentColor = MaterialTheme.colorScheme.onPrimary,
+                        todayDateBorderColor = MaterialTheme.colorScheme.primary,
+                        todayContentColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+                HorizontalDivider()
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (allowClear) {
+                        TextButton(onClick = { onConfirm(null) }) {
+                            Text("清除", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    TextButton(onClick = onDismiss) { Text("取消") }
+                    Button(
+                        enabled = pickerState.selectedDateMillis != null,
+                        onClick = {
+                            onConfirm(
+                                pickerState.selectedDateMillis?.let(Instant::ofEpochMilli)
+                            )
+                        },
+                        modifier = Modifier.height(44.dp)
+                    ) {
+                        Text("确定")
+                    }
                 }
-                TextButton(onClick = onDismiss) { Text("取消") }
             }
         }
-    ) {
-        val selectedLabel = pickerState.selectedDateMillis
-            ?.let(Instant::ofEpochMilli)
-            ?.atZone(ZoneId.of("UTC"))
-            ?.toLocalDate()
-            ?.format(DateTimeFormatter.ofPattern("yyyy年M月d日"))
-            ?: "请选择日期"
-        DatePicker(
-            state = pickerState,
-            title = { Text("选择日期") },
-            headline = { Text(selectedLabel) }
-        )
     }
 }
 
@@ -884,42 +1282,6 @@ private fun TextEntryDialog(
 }
 
 @Composable
-private fun MoveGroupDialog(
-    groups: List<SlateTodoGroup>,
-    onDismiss: () -> Unit,
-    onSelect: (String) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("移动到分组") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                groups.forEach { group ->
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(group.id) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Row(
-                            Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Folder, null, Modifier.size(20.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text(group.name, fontWeight = FontWeight.Medium)
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
-}
-
-@Composable
 private fun EmptyState(
     hasSearch: Boolean,
     modifier: Modifier = Modifier
@@ -942,12 +1304,12 @@ private fun EmptyState(
             }
             Spacer(Modifier.height(14.dp))
             Text(
-                if (hasSearch) "没有匹配的待办" else "都处理好了",
+                if (hasSearch) "没有匹配的待办" else "熟能生巧。",
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 17.sp
             )
             Text(
-                if (hasSearch) "换个关键词试试" else "添加下一件要做的事吧",
+                if (hasSearch) "换个关键词试试" else "点击右下角 + 添加下一件事",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp
             )
@@ -967,7 +1329,12 @@ private fun SettingsSheet(
     onSyncNow: () -> Unit,
     onSyncSignOut: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -975,11 +1342,18 @@ private fun SettingsSheet(
                 .padding(horizontal = 22.dp)
                 .padding(bottom = 28.dp)
         ) {
-            Text("设置", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text(
-                "外观、提醒与数据",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("设置", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "外观、提醒与数据",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "关闭设置")
+                }
+            }
             Spacer(Modifier.height(22.dp))
 
             Text("外观", fontWeight = FontWeight.SemiBold)
@@ -1017,7 +1391,12 @@ private fun SettingsSheet(
             ) {
                 Switch(
                     checked = state.remindersEnabled,
-                    onCheckedChange = onReminders
+                    onCheckedChange = onReminders,
+                    colors = SwitchDefaults.colors(
+                        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        uncheckedBorderColor = MaterialTheme.colorScheme.outline,
+                        uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 )
             }
 
@@ -1039,17 +1418,21 @@ private fun SettingsSheet(
                     Spacer(Modifier.width(7.dp))
                     Text("导入")
                 }
-                Button(onClick = onExport, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = onExport, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.FileUpload, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(7.dp))
                     Text("导出")
                 }
             }
             Spacer(Modifier.height(18.dp))
-            OutlinedCard(
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = !state.sync.isSignedIn, onClick = onSyncSetup)
+                    .clickable(enabled = !state.sync.isSignedIn, onClick = onSyncSetup),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+                ),
+                shape = RoundedCornerShape(18.dp)
             ) {
                 if (state.sync.isSignedIn) {
                     SettingRow(
@@ -1059,8 +1442,6 @@ private fun SettingsSheet(
                     ) {
                         if (state.sync.isSyncing) {
                             CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                        } else {
-                            TextButton(onClick = onSyncNow) { Text("立即同步") }
                         }
                     }
                     val lastSyncLabel = if (state.sync.lastSyncedAt == Instant.EPOCH) {
@@ -1072,7 +1453,7 @@ private fun SettingsSheet(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .padding(start = 52.dp, end = 12.dp, bottom = 10.dp),
+                            .padding(start = 52.dp, end = 12.dp, bottom = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -1081,7 +1462,41 @@ private fun SettingsSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp
                         )
-                        TextButton(onClick = onSyncSignOut) { Text("退出") }
+                    }
+                    if (state.sync.isSyncing) {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp)
+                        )
+                    }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 52.dp, end = 12.dp, bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = onSyncNow,
+                            enabled = !state.sync.isSyncing,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                        ) {
+                            Icon(Icons.Default.Sync, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(7.dp))
+                            Text("立即同步")
+                        }
+                        TextButton(
+                            onClick = onSyncSignOut,
+                            enabled = !state.sync.isSyncing,
+                            modifier = Modifier.height(46.dp)
+                        ) {
+                            Text(
+                                "退出",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 } else {
                     SettingRow(
@@ -1179,10 +1594,20 @@ private fun ThemeChoice(
         MaterialTheme.colorScheme.primaryContainer
     } else MaterialTheme.colorScheme.surfaceVariant
     Surface(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier
+            .defaultMinSize(minHeight = 86.dp)
+            .semantics {
+                role = Role.RadioButton
+                this.selected = selected
+            }
+            .clickable(onClick = onClick),
         color = color,
-        shape = RoundedCornerShape(14.dp),
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
+        shape = RoundedCornerShape(16.dp),
+        border = if (selected) {
+            BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f))
+        }
     ) {
         Column(
             Modifier.padding(vertical = 12.dp),
