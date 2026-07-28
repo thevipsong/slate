@@ -143,4 +143,48 @@ final class TodoFileStoreTests {
             return true
         }
     }
+
+    /// Android 会携带同步元数据；macOS v3 必须忽略未知字段并完整读取业务字段。
+    @Test func androidV3ArchiveWithSyncMetadataDecodes() throws {
+        let groupID = UUID()
+        let itemID = UUID()
+        let json = """
+        {
+          "version": 3,
+          "syncRevision": 8,
+          "groups": [{
+            "id": "\(groupID.uuidString)",
+            "name": "手机待办",
+            "sortOrder": 0,
+            "systemImage": "folder",
+            "revision": 7,
+            "updatedAt": "2026-07-28T08:00:00Z",
+            "isDeleted": false
+          }],
+          "items": [{
+            "id": "\(itemID.uuidString)",
+            "title": "来自 Android",
+            "isCompleted": false,
+            "createdAt": "2026-07-28T08:00:00Z",
+            "groupID": "\(groupID.uuidString)",
+            "sortOrder": 0,
+            "revision": 8,
+            "updatedAt": "2026-07-28T08:01:00Z",
+            "isDeleted": false
+          }]
+        }
+        """
+
+        let archive = try store.decode(Data(json.utf8))
+
+        #expect(archive.items.single?.title == "来自 Android")
+        #expect(archive.items.single?.groupID == groupID)
+        #expect(archive.groups.single?.name == "手机待办")
+    }
+}
+
+private extension Collection {
+    var single: Element? {
+        count == 1 ? first : nil
+    }
 }

@@ -206,6 +206,33 @@ struct ThemePickerView: View {
                     )
                 )
             }
+            Section("数据") {
+                Button("导入 Slate JSON…") {
+                    NotificationCenter.default.post(name: .importSlateArchive, object: nil)
+                }
+                Button("导出 Slate JSON…") {
+                    NotificationCenter.default.post(name: .exportSlateArchive, object: nil)
+                }
+            }
+            Section("同步") {
+                if viewModel.isSyncSignedIn {
+                    Text(viewModel.syncAccountEmail ?? "已登录")
+                    Button(viewModel.isSyncing ? "正在同步…" : "立即同步") {
+                        viewModel.syncNow()
+                    }
+                    .disabled(viewModel.isSyncing)
+                    Button("退出同步账户") {
+                        viewModel.signOutSync()
+                    }
+                } else {
+                    Button("配置双端同步…") {
+                        NotificationCenter.default.post(name: .configureSlateSync, object: nil)
+                    }
+                }
+                if let status = viewModel.syncStatusMessage {
+                    Text(status)
+                }
+            }
         } label: {
             Image(systemName: "textformat")
                 .font(theme.font(12, weight: .semibold))
@@ -218,6 +245,6 @@ struct ThemePickerView: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .help("外观、字体、城市与提醒")
+        .help("外观、字体、城市、提醒与数据")
     }
 }

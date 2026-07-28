@@ -5,6 +5,7 @@ DerivedData/
 
 # Packaged app and release archives
 Dist/
+Private/
 *.zip
 
 # Local development workspace and review artifacts
@@ -17,3 +18,12 @@ Slate-App-Evaluation.md
 **/.DS_Store
 *.xcuserstate
 xcuserdata/
+
+# Android / Gradle
+android/.gradle/
+android/local.properties
+android/**/build/
+android/captures/
+*.jks
+*.keystore
+keystore.properties

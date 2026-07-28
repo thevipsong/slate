@@ -24,6 +24,7 @@ TESTS=("${(@f)$(find "$PROJECT_DIR/Tests/TodoListTests" -name "*.swift")}")
 echo "==> 编译测试 runner"
 xcrun -sdk macosx swiftc \
     -target "$TARGET" \
+    -D DEBUG \
     -module-name TodoListTests \
     -F "$DEV_FRAMEWORKS" \
     -Xlinker -rpath -Xlinker "$DEV_FRAMEWORKS" \

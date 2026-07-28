@@ -5,16 +5,17 @@
 <h1 align="center">Slate</h1>
 
 <p align="center">
-  <strong>极简、原生的 macOS 待办事项应用</strong>
+  <strong>极简、原生的 macOS 与 Android 待办事项应用</strong>
   <br />
-  纯本地 · 零依赖 · 键盘驱动 · 深色原生
+  本地优先 · 双端原生 · 数据可迁移 · 深色原生
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%2015%2B-blue" alt="Platform" />
+  <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84" alt="Android" />
   <img src="https://img.shields.io/badge/swift-6.0-orange" alt="Swift" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
-  <img src="https://img.shields.io/badge/tests-52%20passed-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-58%20passed-brightgreen" alt="Tests" />
   <a href="https://github.com/thevipsong/slate/actions/workflows/ci.yml">
     <img src="https://github.com/thevipsong/slate/actions/workflows/ci.yml/badge.svg" alt="CI" />
   </a>
@@ -29,15 +30,32 @@
 - ⌨️ **键盘驱动** — 几乎不需要鼠标：⌘N 新建、⌘↩ 添加、⌘Z 撤销、⌘⇧↩ 切换完成、⌘⌫ 删除、Esc 取消编辑、⌘1-3 切换筛选、⌘[ ] 切分组、⌘F 搜索
 - ✨ **严格单选 + 拖拽** — 单击任务立即选中且始终只保留一条高亮；支持同组内拖拽排序，并可通过右键菜单移动到其他分组
 - 🔙 **多步撤销** — 增加 / 删除 / 完成 / 编辑 / 移动全覆盖，撤销栈上限可配
-- 🏠 **纯本地 JSON 存储** — 零后台、零上传、零隐私泄露。原子写入 + 双代备份 + 损坏自动回退 + 版本迁移链（v1→v2→v3）
+- 🏠 **本地优先 JSON 存储** — 默认不上传；原子写入 + 双代备份 + 损坏自动回退 + 版本迁移链（v1→v2→v3），可选启用加密会话的双端同步
 - 🌤️ **天气 + 每日名言** — 8 个城市可选天气（当前温度 + 图标），每日一句中文名言，Header 一行展示，不打扰
 - 🎨 **可配置主题** — 深色 / 浅色 / 跟随系统；Rounded / Sans Serif / Monospaced 三种字体；字号可调
 - 🧱 **零外部依赖** — 纯 SwiftUI + MVVM，Package.swift 没有一行 `.package(url:)`。编译链极短，构建秒级
-- 🧪 **52 个单元测试** — 覆盖 CRUD / 筛选 / 分组 / 拖拽 / 撤销 / 选择状态 / 并发 / 持久化往返 / 边界（空态、最大撤销栈、跨组拒绝、空白编辑、最后分组删除拒绝）
+- 🧪 **58 项自动化测试** — 覆盖 CRUD / 筛选 / 分组 / 拖拽 / 撤销 / 选择状态 / 并发 / 持久化往返 / 合并冲突 / 可选 Supabase 集成测试 / 边界
 
 ---
 
 ## 🚀 快速开始
+
+### Android APK
+
+Android 版位于 [`android/`](android/)，使用 Kotlin + Jetpack Compose 原生开发，
+支持核心待办功能、本地提醒和与 macOS 版兼容的 JSON 导入导出。
+
+```bash
+./Scripts/build-android.sh
+```
+
+可安装 APK 将生成到 `Dist/Slate-Android-debug.apk`。详细环境要求和工程说明见
+[`android/README.md`](android/README.md)。
+
+需要长期安装并支持后续覆盖升级时，首次运行
+`./Scripts/generate-android-signing.sh` 生成本机签名，再运行
+`./Scripts/build-android-release.sh`，产物为
+`Dist/Slate-Android-release.apk`。签名文件不会上传 GitHub，必须另行备份。
 
 ### 系统要求
 
@@ -111,6 +129,8 @@ Slate/
 │       │   └── AppColors.swift           # 全局色板
 │       └── Services/
 │           ├── TodoFileStore.swift       # JSON 读写：原子写 / 双备份 / 版本迁移
+│           ├── SlateMergeEngine.swift    # 三方合并与冲突处理
+│           ├── SlateSyncCoordinator.swift # Supabase 版本化同步
 │           ├── WeatherService.swift      # 天气获取 + 每日名言
 │           └── TodoReminderService.swift # 本地提醒
 ├── Tests/
@@ -118,10 +138,17 @@ Slate/
 │       ├── TodoViewModelTests.swift      # 视图模型测试
 │       ├── TodoFileStoreTests.swift      # 存储层测试
 │       ├── WeatherServiceTests.swift     # 天气 / 名言测试
-│       └── TodoReminderServiceTests.swift # 提醒服务测试
+│       ├── TodoReminderServiceTests.swift # 提醒服务测试
+│       └── SupabaseSyncIntegrationTests.swift # 可选真实同步测试
 ├── Scripts/
 │   ├── build-app.sh                      # Release 打包脚本
+│   ├── build-android.sh                  # Android 测试与 APK 构建
+│   ├── build-android-release.sh          # Android 签名发布版构建
+│   ├── generate-android-signing.sh       # 首次生成本机发布签名
+│   ├── start-local-sync.sh               # 启动精简本地 Supabase
+│   ├── run-sync-integration.sh           # Auth / RLS / RPC 集成验证
 │   └── run-tests.sh                      # CLT 兼容测试脚本
+├── android/                              # Kotlin + Jetpack Compose Android 客户端
 ├── Resources/
 │   └── AppIcon.icns                      # App 图标
 ├── .github/
@@ -150,8 +177,11 @@ Slate/
 - [x] 严格单选
 - [x] 同组拖拽排序 + 右键跨组移动
 - [x] 纯本地 JSON 存储（原子写 + 备份 + 迁移）
-- [x] 52 个单元测试
+- [x] 58 项自动化测试
 - [x] 到期日本地通知提醒
+- [x] Android 原生客户端基础版
+- [x] macOS / Android JSON 双向导入导出
+- [x] Mac / Android 可选 Supabase 自动同步
 - [ ] iCloud 同步（或在偏好中可选）
 - [ ] 从 Things 3 / 提醒事项导入
 - [ ] 标签系统

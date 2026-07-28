@@ -12,6 +12,16 @@ Slate 的重要变更记录在此文件中。
 - GitHub Actions 自动构建与测试
 - Bug、功能建议和 Pull Request 模板
 - 贡献指南与安全报告策略
+- Kotlin + Jetpack Compose 原生 Android 客户端
+- Android 到期提醒、主题切换、分组、筛选、搜索与任务管理
+- macOS / Android Slate v3 JSON 双向导入导出
+- Supabase 可选账户同步、乐观并发控制与三方冲突合并
+- Android CI、独立发布签名与签名 APK 构建脚本
+
+### Changed
+
+- macOS 客户端增加数据导入、导出及双端同步设置
+- 自动化测试扩展到 58 项，并覆盖跨端数据、真实同步链路与合并冲突
 
 ## [1.0.0] - 2026-07-28
 

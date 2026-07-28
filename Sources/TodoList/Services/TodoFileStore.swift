@@ -100,6 +100,11 @@ struct TodoFileStore: Sendable {
             throw CocoaError(.fileReadNoSuchFile)
         }
         let data = try Data(contentsOf: url)
+        return try decode(data)
+    }
+
+    /// 解码用户选择的 Slate JSON 文件；与本地加载共用同一套版本迁移规则。
+    func decode(_ data: Data) throws -> TodoArchive {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         // 单次解码取版本号，避免 JSONSerialization 全量预解析一遍
@@ -144,10 +149,7 @@ struct TodoFileStore: Sendable {
             try fileManager.copyItem(at: fileURL, to: backupURL)
         }
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(archive)
+        let data = try encode(archive)
 
         let tempURL = directory.appendingPathComponent(".todos.\(UUID().uuidString).tmp")
         try data.write(to: tempURL, options: .atomic)
@@ -157,9 +159,17 @@ struct TodoFileStore: Sendable {
             try fileManager.moveItem(at: tempURL, to: fileURL)
         }
     }
+
+    /// 生成可与 Android 版交换的 Slate v3 JSON。
+    func encode(_ archive: TodoArchive) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(archive)
+    }
 }
 
-struct TodoArchive: Codable, Equatable {
+struct TodoArchive: Codable, Equatable, Sendable {
     static let currentVersion = 3
 
     let version: Int
