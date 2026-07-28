@@ -1,0 +1,19 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+DerivedData/
+
+# Packaged app and release archives
+Dist/
+*.zip
+
+# Local development workspace and review artifacts
+.workbuddy/
+CodeReview-*.md
+Slate-App-Evaluation.md
+
+# macOS / Xcode
+.DS_Store
+**/.DS_Store
+*.xcuserstate
+xcuserdata/
