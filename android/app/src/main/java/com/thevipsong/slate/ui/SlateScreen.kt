@@ -219,6 +219,7 @@ fun SlateScreen(
                     onClick = { showAddTodo = true },
                     modifier = Modifier
                         .navigationBarsPadding()
+                        .padding(end = 8.dp, bottom = 8.dp)
                         .semantics { contentDescription = "添加新任务" },
                     shape = RoundedCornerShape(18.dp)
                 ) {
@@ -419,7 +420,7 @@ private fun SlateHeader(
 ) {
     val date = remember {
         LocalDate.now().format(
-            DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.SIMPLIFIED_CHINESE)
+            DateTimeFormatter.ofPattern("M月d日 E", Locale.SIMPLIFIED_CHINESE)
         )
     }
     Row(
@@ -434,7 +435,7 @@ private fun SlateHeader(
         Column(Modifier.weight(1f)) {
             val selectedGroup = state.groups.firstOrNull { it.id == state.selectedGroupID }
             Text(
-                "Slate",
+                selectedGroup?.name ?: "待办",
                 fontSize = 20.sp,
                 lineHeight = 24.sp,
                 fontWeight = FontWeight.Bold,
@@ -442,7 +443,7 @@ private fun SlateHeader(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                "${selectedGroup?.name ?: "待办"} · $date · ${state.pendingCount}项待完成",
+                "$date · ${state.selectedGroupPendingCount}项待办",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.Medium,
                 fontSize = 12.sp,

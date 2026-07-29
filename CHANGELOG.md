@@ -29,6 +29,7 @@ Slate 的重要变更记录在此文件中。
 - Android 首页压缩为紧凑 Header、分组抽屉和状态分段控件，显著增加首屏任务容量
 - Android 日期选择器、主题卡片、提醒开关与同步卡片统一 Slate 视觉语言
 - Android 完成操作改为单手势单次消费，并显示明确 Snackbar 反馈
+- Android Header 改为当前分组主标题与短日期副标题，FAB 增加 24dp 视觉安全间距
 - Android 应用版本更新为 0.3.0（versionCode 3），可覆盖升级旧版本
 
 ### Fixed

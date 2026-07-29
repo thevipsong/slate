@@ -62,6 +62,10 @@ data class SlateUiState(
         }
     val totalCount get() = archive.items.count { !it.isDeleted }
     val pendingCount get() = archive.items.count { !it.isDeleted && !it.isCompleted }
+    val selectedGroupPendingCount
+        get() = archive.items.count {
+            !it.isDeleted && !it.isCompleted && it.groupID == selectedGroupID
+        }
 }
 
 data class SyncSettingsUiState(
