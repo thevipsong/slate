@@ -57,6 +57,21 @@ class SlateSyncCoordinator(
         error("云端数据持续变化，已保留本地内容，请稍后重试。")
     }
 
+    suspend fun refreshIfRemoteChanged(
+        configuration: SupabaseConfiguration
+    ): SyncOutcome? {
+        var session = sessionStore.load() ?: error("请先登录同步账户。")
+        val api = SupabaseHTTPClient(configuration)
+        if (session.expiresAtEpochSeconds <= Instant.now().epochSecond + 60) {
+            session = api.refresh(session)
+            sessionStore.save(session)
+        }
+        val localState = stateStore.load()
+        val remote = api.fetchArchive(session) ?: return null
+        if (remote.revision <= localState.remoteRevision) return null
+        return sync(configuration)
+    }
+
     companion object {
         private const val MAX_ATTEMPTS = 3
     }

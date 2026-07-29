@@ -25,8 +25,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
+    override fun onStart() {
+        super.onStart()
+        viewModel.startAutomaticSync()
         viewModel.syncIfConfigured()
+    }
+
+    override fun onStop() {
+        viewModel.stopAutomaticSync()
+        super.onStop()
     }
 }

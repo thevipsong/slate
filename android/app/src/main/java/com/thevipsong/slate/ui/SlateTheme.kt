@@ -19,7 +19,7 @@ val SlateDark = Color(0xFF10141B)
 val SlateSurface = Color(0xFF181D25)
 val SlateSurfaceHigh = Color(0xFF202733)
 val SlateText = Color(0xFFF4F6FA)
-val SlateMuted = Color(0xFF939CAA)
+val SlateMuted = Color(0xFFADB6C5)
 val SlateOrange = Color(0xFFFFA24B)
 
 private val DarkColors = darkColorScheme(

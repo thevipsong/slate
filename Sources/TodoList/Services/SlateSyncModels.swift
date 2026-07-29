@@ -75,6 +75,29 @@ struct SlateCloudSyncRecord: Decodable, Sendable {
     }
 }
 
+struct SlateCloudArchiveRecord: Decodable, Sendable {
+    let revision: Int64
+    let archive: TodoArchive
+    let deviceID: String
+    let updatedAtRaw: String
+
+    var updatedAt: Date {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: updatedAtRaw) {
+            return date
+        }
+        return ISO8601DateFormatter().date(from: updatedAtRaw) ?? .distantPast
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case revision
+        case archive
+        case deviceID = "device_id"
+        case updatedAtRaw = "updated_at"
+    }
+}
+
 struct SlateLocalSyncState: Codable, Equatable, Sendable {
     var baseArchive: TodoArchive?
     var remoteRevision: Int64

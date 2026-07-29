@@ -98,6 +98,32 @@ actor SlateSyncCoordinator {
             message: "云端数据持续变化，已保留本地内容，请稍后重试。"
         )
     }
+
+    /// Read-only remote revision check used by the foreground polling loop.
+    /// It avoids incrementing the cloud revision when nothing changed.
+    func refreshIfRemoteChanged(
+        localArchive: TodoArchive,
+        configuration: SupabaseConfiguration
+    ) async throws -> SlateSyncOutcome? {
+        guard var session = await sessionStore.load() else {
+            throw CoordinatorError(message: "请先登录同步账户。")
+        }
+        let client = SupabaseHTTPClient(configuration: configuration)
+        if session.expiresAt <= Date().addingTimeInterval(60) {
+            session = try await client.refresh(session)
+            try await sessionStore.save(session)
+        }
+
+        let state = await stateStore.load()
+        guard let remote = try await client.fetchArchive(session: session),
+              remote.revision > state.remoteRevision else {
+            return nil
+        }
+        return try await sync(
+            localArchive: localArchive,
+            configuration: configuration
+        )
+    }
 }
 
 private struct CoordinatorError: LocalizedError {

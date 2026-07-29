@@ -53,7 +53,7 @@ enum SlateMergeEngine {
         }
 
         return SlateMergeResult(
-            archive: TodoArchive(items: items, groups: groups),
+            archive: TodoArchive(items: items, groups: groups).normalized(),
             conflictingIDs: conflicts
         )
     }
@@ -66,9 +66,13 @@ enum SlateMergeEngine {
         preferLocal: Bool,
         conflicts: inout Set<UUID>
     ) -> [Entity] {
-        let baseByID = Dictionary(uniqueKeysWithValues: base.map { ($0[keyPath: id], $0) })
-        let localByID = Dictionary(uniqueKeysWithValues: local.map { ($0[keyPath: id], $0) })
-        let remoteByID = Dictionary(uniqueKeysWithValues: remote.map { ($0[keyPath: id], $0) })
+        // Sync payloads are user data, so duplicate identifiers must never be
+        // allowed to reach Dictionary(uniqueKeysWithValues:), which traps the
+        // entire process. Keep the last serialized value for an identifier:
+        // older clients append their newest edit last when producing a payload.
+        let baseByID = indexByID(base, id: id)
+        let localByID = indexByID(local, id: id)
+        let remoteByID = indexByID(remote, id: id)
         var orderedIDs = [UUID]()
         var seen = Set<UUID>()
         for entity in local + remote + base {
@@ -93,6 +97,15 @@ enum SlateMergeEngine {
             }
             conflicts.insert(entityID)
             return preferLocal ? localValue : remoteValue
+        }
+    }
+
+    private static func indexByID<Entity>(
+        _ entities: [Entity],
+        id: KeyPath<Entity, UUID>
+    ) -> [UUID: Entity] {
+        entities.reduce(into: [:]) { result, entity in
+            result[entity[keyPath: id]] = entity
         }
     }
 }

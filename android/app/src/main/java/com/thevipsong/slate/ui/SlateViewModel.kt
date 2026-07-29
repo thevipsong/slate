@@ -96,6 +96,8 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
     private val message = MutableStateFlow<String?>(null)
     private val remindersEnabled = MutableStateFlow(app.reminderScheduler.isEnabled)
     private var autoSyncJob: Job? = null
+    private var remoteRefreshJob: Job? = null
+    private var isRefreshingRemote = false
     private val syncSettings = MutableStateFlow(
         SyncSettingsUiState(
             projectURL = preferences.getString(
@@ -183,7 +185,11 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
         repository.addTodo(title, selectedGroupID.value, dueDate)
     }
 
-    fun toggleTodo(id: String) = launchMutation { repository.toggleTodo(id) }
+    fun toggleTodo(id: String) {
+        val item = repository.archive.value.items.firstOrNull { it.id == id }
+        val message = if (item?.isCompleted == true) "已恢复到待完成" else "任务已完成"
+        launchMutation(successMessage = message) { repository.toggleTodo(id) }
+    }
     fun renameTodo(id: String, title: String) = launchMutation { repository.renameTodo(id, title) }
     fun setDueDate(id: String, date: Instant?) = launchMutation { repository.setDueDate(id, date) }
     fun updateTodo(id: String, title: String, dueDate: Instant?, groupID: String) =
@@ -257,6 +263,7 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
                         isSyncing = false
                     )
                     message.value = "同步账户已登录。"
+                    startAutomaticSync()
                     syncNow()
                 }
             } catch (error: Throwable) {
@@ -266,13 +273,13 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun syncNow() {
+    fun syncNow(announcesSuccess: Boolean = true) {
         val current = syncSettings.value
         if (!current.isConfigured || !current.isSignedIn) {
             message.value = "请先配置并登录同步账户。"
             return
         }
-        if (current.isSyncing) return
+        if (current.isSyncing || isRefreshingRemote) return
         syncSettings.value = current.copy(isSyncing = true)
         viewModelScope.launch {
             try {
@@ -283,10 +290,12 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
                     isSyncing = false,
                     lastSyncedAt = outcome.syncedAt
                 )
-                message.value = if (outcome.conflictCount == 0) {
-                    "同步完成。"
-                } else {
-                    "同步完成，已自动处理 ${outcome.conflictCount} 处冲突。"
+                if (announcesSuccess) {
+                    message.value = if (outcome.conflictCount == 0) {
+                        "同步完成。"
+                    } else {
+                        "同步完成，已自动处理 ${outcome.conflictCount} 处冲突。"
+                    }
                 }
             } catch (error: Throwable) {
                 syncSettings.value = syncSettings.value.copy(isSyncing = false)
@@ -297,11 +306,57 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
 
     fun syncIfConfigured() {
         if (syncSettings.value.isConfigured && syncSettings.value.isSignedIn) {
-            syncNow()
+            startAutomaticSync()
+            syncNow(announcesSuccess = false)
+        }
+    }
+
+    fun startAutomaticSync() {
+        val current = syncSettings.value
+        if (!current.isConfigured || !current.isSignedIn || remoteRefreshJob != null) return
+        remoteRefreshJob = viewModelScope.launch {
+            while (true) {
+                delay(5_000)
+                refreshFromRemote()
+            }
+        }
+    }
+
+    fun stopAutomaticSync() {
+        remoteRefreshJob?.cancel()
+        remoteRefreshJob = null
+    }
+
+    private fun refreshFromRemote() {
+        val current = syncSettings.value
+        if (
+            !current.isConfigured ||
+            !current.isSignedIn ||
+            current.isSyncing ||
+            isRefreshingRemote
+        ) return
+        isRefreshingRemote = true
+        viewModelScope.launch {
+            try {
+                val outcome = app.syncCoordinator.refreshIfRemoteChanged(
+                    SupabaseConfiguration(current.projectURL, current.publishableKey)
+                )
+                if (outcome != null) {
+                    syncSettings.value = syncSettings.value.copy(
+                        lastSyncedAt = outcome.syncedAt
+                    )
+                }
+            } catch (_: Throwable) {
+                // Foreground refresh retries on the next tick. Manual sync still
+                // exposes actionable errors to the user.
+            } finally {
+                isRefreshingRemote = false
+            }
         }
     }
 
     fun signOutSync() {
+        stopAutomaticSync()
         app.sessionStore.clear()
         app.syncStateStore.clearBaseline()
         syncSettings.value = syncSettings.value.copy(
@@ -352,7 +407,10 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
         autoSyncJob?.cancel()
         autoSyncJob = viewModelScope.launch {
             delay(1_500)
-            syncNow()
+            while (syncSettings.value.isSyncing || isRefreshingRemote) {
+                delay(250)
+            }
+            syncNow(announcesSuccess = false)
         }
     }
 }

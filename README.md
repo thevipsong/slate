@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84" alt="Android" />
   <img src="https://img.shields.io/badge/swift-6.0-orange" alt="Swift" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
-  <img src="https://img.shields.io/badge/tests-58%20passed-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/macOS%20tests-60%20passed-brightgreen" alt="Tests" />
   <a href="https://github.com/thevipsong/slate/actions/workflows/ci.yml">
     <img src="https://github.com/thevipsong/slate/actions/workflows/ci.yml/badge.svg" alt="CI" />
   </a>
@@ -34,7 +34,7 @@
 - 🌤️ **天气 + 每日名言** — 8 个城市可选天气（当前温度 + 图标），每日一句中文名言，Header 一行展示，不打扰
 - 🎨 **可配置主题** — 深色 / 浅色 / 跟随系统；Rounded / Sans Serif / Monospaced 三种字体；字号可调
 - 🧱 **零外部依赖** — 纯 SwiftUI + MVVM，Package.swift 没有一行 `.package(url:)`。编译链极短，构建秒级
-- 🧪 **58 项自动化测试** — 覆盖 CRUD / 筛选 / 分组 / 拖拽 / 撤销 / 选择状态 / 并发 / 持久化往返 / 合并冲突 / 可选 Supabase 集成测试 / 边界
+- 🧪 **60 项 macOS 自动化测试 + Android 单元测试** — 覆盖 CRUD / 筛选 / 分组 / 拖拽 / 撤销 / 选择状态 / 并发 / 持久化往返 / 合并冲突 / 可选 Supabase 集成测试 / 边界
 
 ---
 
@@ -43,9 +43,9 @@
 ### Android APK
 
 Android 版位于 [`android/`](android/)，使用 Kotlin + Jetpack Compose 原生开发，
-支持核心待办功能、本地提醒和与 macOS 版兼容的 JSON 导入导出。0.2.0
-重做了移动端交互：顶部紧凑布局、悬浮新增、按需展开搜索、任务编辑底部抽屉、
-左右滑动快捷操作，以及长按拖拽排序。
+支持核心待办功能、本地提醒和与 macOS 版兼容的 JSON 导入导出。0.3.0
+采用分组抽屉、紧凑状态筛选、悬浮新增、按需展开搜索和任务编辑底部抽屉；
+支持左右滑动快捷操作、完成提示、长按整卡拖拽排序，以及前台近实时双端同步。
 
 ```bash
 ./Scripts/build-android.sh

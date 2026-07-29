@@ -50,6 +50,8 @@ final class TodoViewModel: ObservableObject {
     // 防抖持久化
     private var persistTask: Task<Void, Never>?
     private var autoSyncTask: Task<Void, Never>?
+    private var remoteRefreshTask: Task<Void, Never>?
+    private var isRefreshingRemote = false
     private var persistGeneration: UInt64 = 0
     /// 所有落盘操作走这条串行队列：
     /// 防抖只能取消还在 sleep 的任务，已进入 save 的任务若与新任务并发，
@@ -96,6 +98,7 @@ final class TodoViewModel: ObservableObject {
             self.lastSyncedAt = syncState.lastSyncedAt == .distantPast
                 ? nil
                 : syncState.lastSyncedAt
+            self.startAutomaticSync()
         }
     }
 
@@ -562,6 +565,7 @@ final class TodoViewModel: ObservableObject {
                 if let session {
                     syncAccountEmail = session.email
                     syncStatusMessage = "同步账户已登录。"
+                    startAutomaticSync()
                     syncNow()
                 } else {
                     syncStatusMessage = "注册成功，请验证邮件后再登录。"
@@ -575,7 +579,14 @@ final class TodoViewModel: ObservableObject {
     }
 
     func syncNow() {
-        guard isSyncConfigured, isSyncSignedIn, !isSyncing else {
+        performSync(announcesSuccess: true)
+    }
+
+    private func performSync(announcesSuccess: Bool) {
+        guard isSyncConfigured,
+              isSyncSignedIn,
+              !isSyncing,
+              !isRefreshingRemote else {
             if !isSyncSignedIn {
                 errorMessage = "请先配置并登录同步账户。"
             }
@@ -596,26 +607,11 @@ final class TodoViewModel: ObservableObject {
                     localArchive: startingSnapshot,
                     configuration: configuration
                 )
-                let current = makeArchiveSnapshot()
-                let finalArchive: TodoArchive
-                if current == startingSnapshot {
-                    finalArchive = outcome.archive
-                } else {
-                    finalArchive = SlateMergeEngine.merge(
-                        base: startingSnapshot,
-                        local: current,
-                        remote: outcome.archive,
-                        preferLocalOnConflict: true
-                    ).archive
-                }
-                if finalArchive != current {
-                    replaceArchiveFromSync(finalArchive)
-                }
-                lastSyncedAt = outcome.syncedAt
-                isSyncing = false
-                syncStatusMessage = outcome.conflictCount == 0
-                    ? "同步完成。"
-                    : "同步完成，已自动处理 \(outcome.conflictCount) 处冲突。"
+                applySyncOutcome(
+                    outcome,
+                    startingSnapshot: startingSnapshot,
+                    announcesSuccess: announcesSuccess
+                )
             } catch {
                 isSyncing = false
                 errorMessage = "同步失败：\(error.localizedDescription)"
@@ -626,11 +622,96 @@ final class TodoViewModel: ObservableObject {
 
     func syncIfConfigured() {
         if isSyncConfigured, isSyncSignedIn {
-            syncNow()
+            startAutomaticSync()
+            performSync(announcesSuccess: false)
+        }
+    }
+
+    func startAutomaticSync() {
+        guard isSyncConfigured, isSyncSignedIn, remoteRefreshTask == nil else {
+            return
+        }
+        remoteRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                self?.refreshFromRemote()
+            }
+        }
+    }
+
+    func stopAutomaticSync() {
+        remoteRefreshTask?.cancel()
+        remoteRefreshTask = nil
+    }
+
+    private func refreshFromRemote() {
+        guard isSyncConfigured,
+              isSyncSignedIn,
+              !isSyncing,
+              !isRefreshingRemote else {
+            return
+        }
+        let configuration = SupabaseConfiguration(
+            projectURL: syncProjectURL,
+            publishableKey: syncPublishableKey
+        )
+        let startingSnapshot = makeArchiveSnapshot()
+        isRefreshingRemote = true
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isRefreshingRemote = false }
+            do {
+                guard let outcome = try await syncCoordinator.refreshIfRemoteChanged(
+                    localArchive: startingSnapshot,
+                    configuration: configuration
+                ) else {
+                    return
+                }
+                applySyncOutcome(
+                    outcome,
+                    startingSnapshot: startingSnapshot,
+                    announcesSuccess: false
+                )
+            } catch {
+                // Background refresh is intentionally quiet. The next foreground
+                // tick retries, while a manual sync still surfaces the full error.
+            }
+        }
+    }
+
+    private func applySyncOutcome(
+        _ outcome: SlateSyncOutcome,
+        startingSnapshot: TodoArchive,
+        announcesSuccess: Bool
+    ) {
+        let current = makeArchiveSnapshot()
+        let finalArchive: TodoArchive
+        if current == startingSnapshot {
+            finalArchive = outcome.archive
+        } else {
+            finalArchive = SlateMergeEngine.merge(
+                base: startingSnapshot,
+                local: current,
+                remote: outcome.archive,
+                preferLocalOnConflict: true
+            ).archive
+        }
+        if finalArchive != current {
+            replaceArchiveFromSync(finalArchive)
+        }
+        lastSyncedAt = outcome.syncedAt
+        isSyncing = false
+        if announcesSuccess {
+            syncStatusMessage = outcome.conflictCount == 0
+                ? "同步完成。"
+                : "同步完成，已自动处理 \(outcome.conflictCount) 处冲突。"
         }
     }
 
     func signOutSync() {
+        stopAutomaticSync()
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -738,7 +819,12 @@ final class TodoViewModel: ObservableObject {
         autoSyncTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
-            self?.syncNow()
+            guard let self else { return }
+            while self.isSyncing || self.isRefreshingRemote {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+            }
+            self.performSync(announcesSuccess: false)
         }
     }
 

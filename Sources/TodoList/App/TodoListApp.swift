@@ -111,8 +111,10 @@ struct TodoListApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
+                viewModel.stopAutomaticSync()
                 viewModel.persistImmediately()
             } else if phase == .active {
+                viewModel.startAutomaticSync()
                 viewModel.syncIfConfigured()
             }
         }

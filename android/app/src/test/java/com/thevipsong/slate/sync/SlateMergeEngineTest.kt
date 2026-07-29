@@ -46,4 +46,25 @@ class SlateMergeEngineTest {
         assertEquals("远端", result.archive.items.first { it.id == "A" }.title)
         assertEquals(setOf("A"), result.conflictingIDs)
     }
+
+    @Test
+    fun duplicateRemoteIDsUseNewestSerializedValueWithoutCrashing() {
+        val remote = SlateArchive(
+            items = listOf(
+                first.copy(title = "远端旧值"),
+                first.copy(title = "远端新值")
+            ),
+            groups = listOf(group)
+        )
+
+        val result = SlateMergeEngine.merge(
+            base = null,
+            local = SlateArchive(items = emptyList(), groups = listOf(group)),
+            remote = remote,
+            preferLocalOnConflict = false
+        )
+
+        assertEquals(1, result.archive.items.size)
+        assertEquals("远端新值", result.archive.items.single().title)
+    }
 }

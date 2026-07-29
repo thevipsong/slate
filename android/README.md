@@ -11,7 +11,9 @@ Slate Android 是使用 Kotlin 与 Jetpack Compose 编写的原生 Android 客�
 - 深色、浅色、跟随系统主题
 - 原子 JSON 存储与双代备份
 - 导入、导出 macOS Slate v3 JSON
-- 可选 Supabase 账户同步、版本冲突三方合并与自动重试
+- 分组抽屉、完成/删除滑动操作、长按整卡拖拽排序与底部抽屉编辑
+- 可选 Supabase 账户同步、前台约 5 秒远端刷新、版本冲突三方合并与自动重试
+- Android Adaptive Icon，系统可安全裁切为圆形、圆角矩形或其他启动器形状
 
 ## 构建
 

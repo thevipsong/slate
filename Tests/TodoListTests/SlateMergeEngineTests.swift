@@ -81,4 +81,39 @@ struct SlateMergeEngineTests {
         #expect(result.archive.items.first { $0.id == firstID }?.title == "远端")
         #expect(result.conflictingIDs == [firstID])
     }
+
+    @Test func duplicateRemoteIDsAreRepairedInsteadOfCrashing() {
+        var older = first
+        older.title = "远端旧值"
+        var newest = first
+        newest.title = "远端新值"
+
+        let result = SlateMergeEngine.merge(
+            base: nil,
+            local: TodoArchive(items: [], groups: [group]),
+            remote: TodoArchive(items: [older, newest], groups: [group]),
+            preferLocalOnConflict: false
+        )
+
+        #expect(result.archive.items.count == 1)
+        #expect(result.archive.items[0].id == firstID)
+        #expect(result.archive.items[0].title == "远端新值")
+    }
+
+    @Test func duplicateGroupsAndItemsNormalizeDeterministically() {
+        var renamedGroup = group
+        renamedGroup.name = "新分组名"
+        var updated = first
+        updated.title = "  最新标题  "
+
+        let normalized = TodoArchive(
+            items: [first, updated],
+            groups: [group, renamedGroup]
+        ).normalized()
+
+        #expect(normalized.groups.count == 1)
+        #expect(normalized.groups[0].name == "新分组名")
+        #expect(normalized.items.count == 1)
+        #expect(normalized.items[0].title == "最新标题")
+    }
 }

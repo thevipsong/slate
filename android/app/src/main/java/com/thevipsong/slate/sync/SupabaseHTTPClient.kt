@@ -67,6 +67,20 @@ class SupabaseHTTPClient(
             ?: error("同步服务没有返回有效记录。")
     }
 
+    suspend fun fetchArchive(
+        session: StoredSupabaseSession
+    ): CloudArchiveRecord? {
+        val raw = requestRaw(
+            method = "GET",
+            path = "/rest/v1/slate_archives" +
+                "?select=revision,archive,device_id,updated_at&limit=1",
+            body = null,
+            accessToken = session.accessToken
+        )
+        return SlateArchiveCodec.json.decodeFromString<List<CloudArchiveRecord>>(raw)
+            .firstOrNull()
+    }
+
     private suspend fun request(
         method: String,
         path: String,
@@ -79,7 +93,7 @@ class SupabaseHTTPClient(
     private suspend fun requestRaw(
         method: String,
         path: String,
-        body: String,
+        body: String?,
         accessToken: String?
     ): String = withContext(Dispatchers.IO) {
         require(configuration.isAllowedEndpoint) {
@@ -96,15 +110,17 @@ class SupabaseHTTPClient(
             connection.requestMethod = method
             connection.connectTimeout = 15_000
             connection.readTimeout = 20_000
-            connection.doOutput = true
+            connection.doOutput = body != null
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("apikey", configuration.publishableKey)
             if (accessToken != null) {
                 connection.setRequestProperty("Authorization", "Bearer $accessToken")
             }
-            connection.outputStream.use { output ->
-                output.write(body.toByteArray(Charsets.UTF_8))
+            if (body != null) {
+                connection.outputStream.use { output ->
+                    output.write(body.toByteArray(Charsets.UTF_8))
+                }
             }
 
             val status = connection.responseCode

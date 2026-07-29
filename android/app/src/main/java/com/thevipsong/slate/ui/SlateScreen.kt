@@ -39,8 +39,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -58,8 +56,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -74,9 +72,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -85,6 +83,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -99,6 +100,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
@@ -106,6 +108,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -149,6 +152,8 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun SlateScreen(
@@ -156,6 +161,8 @@ fun SlateScreen(
     viewModel: SlateViewModel
 ) {
     val snackbarHost = remember { SnackbarHostState() }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val coroutineScope = rememberCoroutineScope()
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showAddGroup by rememberSaveable { mutableStateOf(false) }
     var showAddTodo by rememberSaveable { mutableStateOf(false) }
@@ -181,93 +188,109 @@ fun SlateScreen(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets(0),
-        snackbarHost = { SnackbarHost(snackbarHost) },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddTodo = true },
-                modifier = Modifier
-                    .navigationBarsPadding()
-                    .semantics { contentDescription = "添加新任务" },
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null)
-            }
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = true,
+        drawerContent = {
+            GroupDrawer(
+                state = state,
+                onSelect = { groupID ->
+                    viewModel.selectGroup(groupID)
+                    coroutineScope.launch { drawerState.close() }
+                },
+                onManage = {
+                    groupToManage = it
+                    coroutineScope.launch { drawerState.close() }
+                },
+                onAdd = {
+                    showAddGroup = true
+                    coroutineScope.launch { drawerState.close() }
+                }
+            )
         }
-    ) { contentPadding ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.background
-                        )
-                    )
-                )
-                .padding(contentPadding)
-        ) {
-            Column(
+    ) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = MaterialTheme.colorScheme.background,
+            contentWindowInsets = WindowInsets(0),
+            snackbarHost = { SnackbarHost(snackbarHost) },
+            floatingActionButton = {
+                FloatingActionButton(
+                    onClick = { showAddTodo = true },
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .semantics { contentDescription = "添加新任务" },
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                }
+            }
+        ) { contentPadding ->
+            Box(
                 Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .imePadding()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                                MaterialTheme.colorScheme.background,
+                                MaterialTheme.colorScheme.background
+                            )
+                        )
+                    )
+                    .padding(contentPadding)
             ) {
-                SlateHeader(
-                    state = state,
-                    searchActive = showSearch || state.search.isNotBlank(),
-                    onSearch = { showSearch = !showSearch },
-                    onSettings = { showSettings = true }
-                )
-                GroupStrip(
-                    groups = state.groups,
-                    selectedID = state.selectedGroupID,
-                    onSelect = viewModel::selectGroup,
-                    onManage = { groupToManage = it },
-                    onAdd = { showAddGroup = true }
-                )
-                AnimatedVisibility(
-                    visible = showSearch || state.search.isNotBlank(),
-                    enter = fadeIn() + slideInVertically { -it / 2 },
-                    exit = fadeOut() + slideOutVertically { -it / 2 }
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .imePadding()
                 ) {
-                    SearchField(
-                        search = state.search,
-                        onSearch = viewModel::setSearch,
-                        onClose = {
-                            viewModel.setSearch("")
-                            showSearch = false
-                        }
+                    SlateHeader(
+                        state = state,
+                        searchActive = showSearch || state.search.isNotBlank(),
+                        onOpenGroups = { coroutineScope.launch { drawerState.open() } },
+                        onSearch = { showSearch = !showSearch },
+                        onSettings = { showSettings = true }
                     )
-                }
-                CompactFilterBar(
-                    selected = state.filter,
-                    onFilter = viewModel::setFilter
-                )
+                    AnimatedVisibility(
+                        visible = showSearch || state.search.isNotBlank(),
+                        enter = fadeIn() + slideInVertically { -it / 2 },
+                        exit = fadeOut() + slideOutVertically { -it / 2 }
+                    ) {
+                        SearchField(
+                            search = state.search,
+                            onSearch = viewModel::setSearch,
+                            onClose = {
+                                viewModel.setSearch("")
+                                showSearch = false
+                            }
+                        )
+                    }
+                    CompactFilterBar(
+                        selected = state.filter,
+                        onFilter = viewModel::setFilter
+                    )
 
-                if (state.visibleItems.isEmpty()) {
-                    EmptyState(
-                        hasSearch = state.search.isNotBlank(),
-                        modifier = Modifier.weight(1f)
-                    )
-                } else {
-                    TodoList(
-                        items = state.visibleItems,
-                        onToggle = viewModel::toggleTodo,
-                        onDelete = viewModel::deleteTodo,
-                        onReorder = viewModel::reorderTodo,
-                        onEdit = { item ->
-                            viewModel.selectTodo(item.id)
-                            editingItem = item
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
+                    if (state.visibleItems.isEmpty()) {
+                        EmptyState(
+                            hasSearch = state.search.isNotBlank(),
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        TodoList(
+                            items = state.visibleItems,
+                            onToggle = viewModel::toggleTodo,
+                            onDelete = viewModel::deleteTodo,
+                            onReorder = viewModel::reorderTodo,
+                            onEdit = { item ->
+                                viewModel.selectTodo(item.id)
+                                editingItem = item
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }
@@ -390,6 +413,7 @@ fun SlateScreen(
 private fun SlateHeader(
     state: SlateUiState,
     searchActive: Boolean,
+    onOpenGroups: () -> Unit,
     onSearch: () -> Unit,
     onSettings: () -> Unit
 ) {
@@ -401,27 +425,31 @@ private fun SlateHeader(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, top = 10.dp, end = 10.dp, bottom = 6.dp),
+            .padding(start = 4.dp, top = 8.dp, end = 4.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            "Slate",
-            fontSize = 28.sp,
-            lineHeight = 32.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.8).sp
-        )
-        Text(
-            "$date · ${state.pendingCount}项待完成",
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 14.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        IconButton(onClick = onOpenGroups, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Default.Menu, contentDescription = "打开分组")
+        }
+        Column(Modifier.weight(1f)) {
+            val selectedGroup = state.groups.firstOrNull { it.id == state.selectedGroupID }
+            Text(
+                "Slate",
+                fontSize = 20.sp,
+                lineHeight = 24.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                "${selectedGroup?.name ?: "待办"} · $date · ${state.pendingCount}项待完成",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         IconButton(
             onClick = onSearch,
             modifier = Modifier.size(48.dp)
@@ -444,60 +472,86 @@ private fun SlateHeader(
 }
 
 @Composable
-private fun GroupStrip(
-    groups: List<SlateTodoGroup>,
-    selectedID: String,
+private fun GroupDrawer(
+    state: SlateUiState,
     onSelect: (String) -> Unit,
     onManage: (SlateTodoGroup) -> Unit,
     onAdd: () -> Unit
 ) {
-    LazyRow(
+    ModalDrawerSheet(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .fillMaxWidth(0.84f)
+            .navigationBarsPadding(),
+        drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)
     ) {
-        items(groups, key = SlateTodoGroup::id) { group ->
-            val selected = group.id == selectedID
-            FilterChip(
-                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                selected = selected,
-                onClick = {
-                    if (selected) onManage(group) else onSelect(group.id)
-                },
-                label = {
-                    Text(
-                        group.name,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp)
+        ) {
+            Text(
+                "Slate",
+                modifier = Modifier.padding(start = 16.dp, top = 18.dp),
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "选择分组",
+                modifier = Modifier.padding(start = 16.dp, top = 2.dp, bottom = 18.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp
+            )
+            state.groups.forEach { group ->
+                val selected = group.id == state.selectedGroupID
+                val pendingCount = state.archive.items.count {
+                    !it.isDeleted && !it.isCompleted && it.groupID == group.id
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NavigationDrawerItem(
+                        modifier = Modifier.weight(1f),
+                        selected = selected,
+                        onClick = { onSelect(group.id) },
+                        icon = {
+                            Icon(Icons.Default.Folder, contentDescription = null)
+                        },
+                        label = {
+                            Text(
+                                group.name,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontWeight = if (selected) {
+                                    FontWeight.SemiBold
+                                } else FontWeight.Medium
+                            )
+                        },
+                        badge = {
+                            Text(pendingCount.toString())
+                        }
                     )
-                },
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.Folder,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                },
-                trailingIcon = if (selected) {
-                    {
+                    IconButton(
+                        onClick = { onManage(group) },
+                        modifier = Modifier.size(48.dp)
+                    ) {
                         Icon(
                             Icons.Default.MoreHoriz,
                             contentDescription = "管理分组",
-                            modifier = Modifier.size(18.dp)
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                } else null
-            )
-        }
-        item {
-            FilledIconButton(
+                }
+            }
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+            OutlinedButton(
                 onClick = onAdd,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
             ) {
-                Icon(Icons.Default.Add, contentDescription = "添加分组")
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("新建分组")
             }
         }
     }
@@ -735,7 +789,7 @@ private fun TodoList(
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         state = listState,
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 104.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 132.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         itemsIndexed(items, key = { _, item -> item.id }) { _, item ->
@@ -812,18 +866,36 @@ private fun SwipeTodoCard(
     onDelete: () -> Unit,
     onEdit: () -> Unit
 ) {
+    var actionLocked by remember(item.id) { mutableStateOf(false) }
+    val triggerToggle = {
+        if (!actionLocked) {
+            actionLocked = true
+            onToggle()
+        }
+    }
+    LaunchedEffect(actionLocked) {
+        if (actionLocked) {
+            delay(650)
+            actionLocked = false
+        }
+    }
     @Suppress("DEPRECATION")
     val dismissState = rememberSwipeToDismissBoxState(
         positionalThreshold = { distance -> distance * 0.34f },
         confirmValueChange = { value ->
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
-                    onToggle()
+                    triggerToggle()
                     false
                 }
                 SwipeToDismissBoxValue.EndToStart -> {
-                    onDelete()
-                    true
+                    if (actionLocked) {
+                        false
+                    } else {
+                        actionLocked = true
+                        onDelete()
+                        true
+                    }
                 }
                 SwipeToDismissBoxValue.Settled -> true
             }
@@ -898,7 +970,7 @@ private fun SwipeTodoCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
-                    onClick = onToggle,
+                    onClick = triggerToggle,
                     modifier = Modifier.size(38.dp)
                 ) {
                     Icon(
@@ -926,15 +998,6 @@ private fun SwipeTodoCard(
                         DueDateText(dueDate = it, completed = item.isCompleted)
                     }
                 }
-                Spacer(Modifier.width(8.dp))
-                Icon(
-                    Icons.Default.DragHandle,
-                    contentDescription = "长按拖拽排序",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .size(24.dp)
-                        .alpha(0.62f)
-                )
             }
         }
     }

@@ -52,6 +52,17 @@ struct SupabaseHTTPClient: Sendable {
         return record
     }
 
+    func fetchArchive(
+        session: StoredSupabaseSession
+    ) async throws -> SlateCloudArchiveRecord? {
+        let records: [SlateCloudArchiveRecord] = try await get(
+            path: "/rest/v1/slate_archives"
+                + "?select=revision,archive,device_id,updated_at&limit=1",
+            accessToken: session.accessToken
+        )
+        return records.first
+    }
+
     private func post<Body: Encodable & Sendable, Response: Decodable & Sendable>(
         path: String,
         body: Body,
@@ -76,6 +87,41 @@ struct SupabaseHTTPClient: Sendable {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         request.httpBody = try encoder.encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw SyncNetworkError(message: "同步服务响应无效。")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let payload = try? JSONDecoder().decode(SupabaseError.self, from: data)
+            throw SyncNetworkError(
+                message: payload?.message
+                    ?? payload?.errorDescription
+                    ?? "同步服务请求失败（HTTP \(http.statusCode)）。"
+            )
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(Response.self, from: data)
+    }
+
+    private func get<Response: Decodable & Sendable>(
+        path: String,
+        accessToken: String
+    ) async throws -> Response {
+        guard let baseURL = configuration.normalizedURL,
+              configuration.isAllowedEndpoint,
+              !configuration.publishableKey.isEmpty,
+              let url = URL(string: path, relativeTo: baseURL) else {
+            throw SyncNetworkError(message: "Supabase 项目配置无效。")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(configuration.publishableKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
