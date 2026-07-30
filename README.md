@@ -1,11 +1,15 @@
 <p align="center">
-  <img src="generated-images/slate-icon-1024.png" width="96" alt="Slate App 图标" />
+  <img src="generated-images/slate-icon-1024.png" width="96" alt="序事 App 图标" />
 </p>
 
-<h1 align="center">Slate</h1>
+<h1 align="center">序事</h1>
 
 <p align="center">
-  <strong>极简、原生的 macOS 待办事项应用</strong>
+  <strong>序事 · 极简待办</strong>
+  <br />
+  <em>Slate</em>
+  <br />
+  记下每件事，按自己的节奏完成。
   <br />
   纯本地 · 零依赖 · 键盘驱动 · 深色原生
 </p>
