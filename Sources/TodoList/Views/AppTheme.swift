@@ -1,3 +1,5 @@
+@preconcurrency import AppKit
+import Combine
 import SwiftUI
 
 /// 用户可选择的字体族
@@ -78,14 +80,54 @@ enum MenuBarPanelSize: String, CaseIterable, Identifiable {
     }
 }
 
-/// 全局主题：字体族 + 字号档。挂在 @StateObject + .environmentObject 让子视图读取。
+/// 全局主题：字体、字号、外观和菜单栏尺寸的单一状态源。
+///
+/// 这里不能直接依赖类中的 `@AppStorage`：它虽然能写入偏好设置，却不会稳定地通过
+/// `ObservableObject` 通知常驻的菜单栏面板。改用 `@Published` 发布变化，再显式持久化，
+/// 可确保主窗口、菜单栏面板和 AppKit 标题栏在同一次设置后立即同步。
 final class AppTheme: ObservableObject {
-    @AppStorage("theme.fontFamily") var fontFamilyRaw: String = AppFontFamily.rounded.rawValue
-    @AppStorage("theme.fontScale") var fontScaleRaw: Int = AppFontScale.regular.rawValue
-    @AppStorage("theme.colorScheme") var colorSchemeRaw: String = "system"
-    @AppStorage("menuBar.panelSize") var menuBarPanelSizeRaw: String = MenuBarPanelSize.regular.rawValue
+    private enum DefaultsKey {
+        static let fontFamily = "theme.fontFamily"
+        static let fontScale = "theme.fontScale"
+        static let colorScheme = "theme.colorScheme"
+        static let menuBarPanelSize = "menuBar.panelSize"
+        static let weatherCityID = "theme.weatherCityID"
+    }
+
+    private let defaults: UserDefaults
+
+    @Published var fontFamilyRaw: String {
+        didSet { defaults.set(fontFamilyRaw, forKey: DefaultsKey.fontFamily) }
+    }
+
+    @Published var fontScaleRaw: Int {
+        didSet { defaults.set(fontScaleRaw, forKey: DefaultsKey.fontScale) }
+    }
+
+    @Published var colorSchemeRaw: String {
+        didSet { defaults.set(colorSchemeRaw, forKey: DefaultsKey.colorScheme) }
+    }
+
+    @Published var menuBarPanelSizeRaw: String {
+        didSet { defaults.set(menuBarPanelSizeRaw, forKey: DefaultsKey.menuBarPanelSize) }
+    }
+
     /// 天气城市（默认蚌埠，目标用户所在地）；本地可选，不申请定位权限
-    @AppStorage("theme.weatherCityID") var weatherCityID: String = "bengbu"
+    @Published var weatherCityID: String {
+        didSet { defaults.set(weatherCityID, forKey: DefaultsKey.weatherCityID) }
+    }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        fontFamilyRaw = defaults.string(forKey: DefaultsKey.fontFamily)
+            ?? AppFontFamily.rounded.rawValue
+        fontScaleRaw = defaults.object(forKey: DefaultsKey.fontScale) as? Int
+            ?? AppFontScale.regular.rawValue
+        colorSchemeRaw = defaults.string(forKey: DefaultsKey.colorScheme) ?? "system"
+        menuBarPanelSizeRaw = defaults.string(forKey: DefaultsKey.menuBarPanelSize)
+            ?? MenuBarPanelSize.regular.rawValue
+        weatherCityID = defaults.string(forKey: DefaultsKey.weatherCityID) ?? "bengbu"
+    }
 
     /// 可选城市列表（中文界面，覆盖主要城市即可）
     static let weatherCities: [(id: String, name: String, lat: Double, lon: Double)] = [
@@ -109,6 +151,16 @@ final class AppTheme: ObservableObject {
         switch colorSchemeRaw {
         case "light": .light
         case "dark": .dark
+        default: nil
+        }
+    }
+
+    /// 同步窗口标题栏、材质背景等 AppKit 层级的外观。
+    /// `nil` 表示恢复跟随系统，不在窗口上保留旧的强制主题。
+    var appKitAppearance: NSAppearance? {
+        switch colorSchemeRaw {
+        case "light": NSAppearance(named: .aqua)
+        case "dark": NSAppearance(named: .darkAqua)
         default: nil
         }
     }

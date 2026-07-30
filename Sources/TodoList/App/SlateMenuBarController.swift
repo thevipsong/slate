@@ -125,6 +125,7 @@ final class SlateMenuBarController: NSObject, ObservableObject, NSPopoverDelegat
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         configureStatusItem()
         configurePopover()
+        applyThemeAppearance()
         configureObservers()
         configureGlobalMouseMonitor()
 
@@ -186,6 +187,8 @@ final class SlateMenuBarController: NSObject, ObservableObject, NSPopoverDelegat
                     width: 380,
                     height: self.theme.menuBarPanelHeight
                 )
+                self.applyThemeAppearance()
+                self.mainWindowController.applyThemeAppearance()
             }
         }
 
@@ -254,11 +257,13 @@ final class SlateMenuBarController: NSObject, ObservableObject, NSPopoverDelegat
 
     private func showPopover() {
         guard let button = statusItem?.button else { return }
+        applyThemeAppearance()
         popover.show(
             relativeTo: button.bounds,
             of: button,
             preferredEdge: .minY
         )
+        applyThemeAppearance()
         NSApp.activate(ignoringOtherApps: true)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
@@ -268,6 +273,12 @@ final class SlateMenuBarController: NSObject, ObservableObject, NSPopoverDelegat
 
     private func closePopover() {
         popover.performClose(nil)
+    }
+
+    private func applyThemeAppearance() {
+        let appearance = theme.appKitAppearance
+        popover.contentViewController?.view.appearance = appearance
+        popover.contentViewController?.view.window?.appearance = appearance
     }
 
     private func updateStatusItem() {
@@ -295,6 +306,18 @@ final class SlateApplicationDelegate: NSObject, NSApplicationDelegate {
 }
 
 /// 按需创建的完整管理窗口。窗口关闭后应用仍常驻菜单栏。
+private struct SlateMainWindowRoot: View {
+    @ObservedObject var viewModel: TodoViewModel
+    @EnvironmentObject private var theme: AppTheme
+
+    var body: some View {
+        ContentView(viewModel: viewModel)
+            .frame(minWidth: 760, idealWidth: 1040, minHeight: 640, idealHeight: 780)
+            .background(AmbientBackground())
+            .preferredColorScheme(theme.preferredColorScheme)
+    }
+}
+
 @MainActor
 private final class SlateMainWindowController: NSObject, NSWindowDelegate {
     private let viewModel: TodoViewModel
@@ -320,6 +343,7 @@ private final class SlateMainWindowController: NSObject, NSWindowDelegate {
     func show() {
         let window = window ?? makeWindow()
         self.window = window
+        applyThemeAppearance()
         installKeyMonitorIfNeeded()
 
         NSApp.activate(ignoringOtherApps: true)
@@ -331,14 +355,17 @@ private final class SlateMainWindowController: NSObject, NSWindowDelegate {
         viewModel.persistImmediately()
     }
 
+    func applyThemeAppearance() {
+        let appearance = theme.appKitAppearance
+        window?.appearance = appearance
+        window?.contentView?.appearance = appearance
+    }
+
     private func makeWindow() -> NSWindow {
-        let rootView = ContentView(viewModel: viewModel)
+        let rootView = SlateMainWindowRoot(viewModel: viewModel)
             .environmentObject(theme)
             .environmentObject(weatherService)
             .environmentObject(reminderService)
-            .frame(minWidth: 760, idealWidth: 1040, minHeight: 640, idealHeight: 780)
-            .background(AmbientBackground())
-            .preferredColorScheme(theme.preferredColorScheme)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1040, height: 780),
@@ -355,6 +382,8 @@ private final class SlateMainWindowController: NSObject, NSWindowDelegate {
         window.collectionBehavior = [.moveToActiveSpace]
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: rootView)
+        window.appearance = theme.appKitAppearance
+        window.contentView?.appearance = theme.appKitAppearance
         window.setFrameAutosaveName("SlateMainWindow")
         window.center()
         window.delegate = self
