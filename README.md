@@ -11,14 +11,15 @@
   <br />
   记下每件事，按自己的节奏完成。
   <br />
-  纯本地 · 零依赖 · 键盘驱动 · 深色原生
+  本地优先 · 双端原生 · 数据可迁移
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%2015%2B-blue" alt="Platform" />
+  <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84" alt="Android" />
   <img src="https://img.shields.io/badge/swift-6.0-orange" alt="Swift" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
-  <img src="https://img.shields.io/badge/tests-52%20passed-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/macOS%20tests-62%20passed-brightgreen" alt="Tests" />
   <a href="https://github.com/thevipsong/slate/actions/workflows/ci.yml">
     <img src="https://github.com/thevipsong/slate/actions/workflows/ci.yml/badge.svg" alt="CI" />
   </a>
@@ -31,17 +32,37 @@
 - 🧩 **分组 + 筛选 + 搜索** — 多分组切换（创建/重命名/移动），支持全部 / 待完成 / 已完成 / 逾期四种筛选，⌘F 搜索标题即时过滤
 - 📅 **轻量到期日** — 自定义深色日历面板，一行内标记「今天 / 昨天 / 逾期 / M-D」，逾期橙色警示，逾期筛选 + 统计卡一目了然
 - ⌨️ **键盘驱动** — 几乎不需要鼠标：⌘N 新建、⌘↩ 添加、⌘Z 撤销、⌘⇧↩ 切换完成、⌘⌫ 删除、Esc 取消编辑、⌘1-3 切换筛选、⌘[ ] 切分组、⌘F 搜索
+- ☑️ **菜单栏快速捕获** — 序事常驻菜单栏且不占用 Dock；按 ⌥Space 从任何应用呼出，输入后回车即保存并继续聚焦
 - ✨ **严格单选 + 拖拽** — 单击任务立即选中且始终只保留一条高亮；支持同组内拖拽排序，并可通过右键菜单移动到其他分组
 - 🔙 **多步撤销** — 增加 / 删除 / 完成 / 编辑 / 移动全覆盖，撤销栈上限可配
-- 🏠 **纯本地 JSON 存储** — 零后台、零上传、零隐私泄露。原子写入 + 双代备份 + 损坏自动回退 + 版本迁移链（v1→v2→v3）
+- 🏠 **本地优先 JSON 存储** — 默认不上传；原子写入 + 双代备份 + 损坏自动回退 + 版本迁移链（v1→v2→v3），可选启用加密会话的双端同步
 - 🌤️ **天气 + 每日名言** — 8 个城市可选天气（当前温度 + 图标），每日一句中文名言，Header 一行展示，不打扰
 - 🎨 **可配置主题** — 深色 / 浅色 / 跟随系统；Rounded / Sans Serif / Monospaced 三种字体；字号可调
 - 🧱 **零外部依赖** — 纯 SwiftUI + MVVM，Package.swift 没有一行 `.package(url:)`。编译链极短，构建秒级
-- 🧪 **52 个单元测试** — 覆盖 CRUD / 筛选 / 分组 / 拖拽 / 撤销 / 选择状态 / 并发 / 持久化往返 / 边界（空态、最大撤销栈、跨组拒绝、空白编辑、最后分组删除拒绝）
+- 🧪 **62 项 macOS 自动化测试 + Android 单元测试** — 覆盖 CRUD / 筛选 / 分组 / 拖拽 / 撤销 / 选择状态 / 并发 / 持久化往返 / 合并冲突 / 可选 Supabase 集成测试 / 边界
 
 ---
 
 ## 🚀 快速开始
+
+### Android APK
+
+Android 版位于 [`android/`](android/)，使用 Kotlin + Jetpack Compose 原生开发，
+支持核心待办功能、本地提醒和与 macOS 版兼容的 JSON 导入导出。0.3.0
+采用分组抽屉、紧凑状态筛选、悬浮新增、按需展开搜索和任务编辑底部抽屉；
+支持左右滑动快捷操作、完成提示、长按整卡拖拽排序，以及前台近实时双端同步。
+
+```bash
+./Scripts/build-android.sh
+```
+
+可安装 APK 将生成到 `Dist/序事-Android-debug.apk`。详细环境要求和工程说明见
+[`android/README.md`](android/README.md)。
+
+需要长期安装并支持后续覆盖升级时，首次运行
+`./Scripts/generate-android-signing.sh` 生成本机签名，再运行
+`./Scripts/build-android-release.sh`，产物为
+`Dist/序事-Android-release.apk`。签名文件不会上传 GitHub，必须另行备份。
 
 ### 系统要求
 
@@ -62,18 +83,49 @@ swift run TodoList
 # File → Open → 选择 Package.swift → 选择 My Mac → Run
 ```
 
+### 菜单栏模式
+
+序事启动后常驻 macOS 菜单栏，不显示 Dock 图标：
+
+- 点击单色对号图标，或在任意应用中按 `⌥Space`，打开快速捕获面板
+- 面板打开后会自动聚焦输入框；输入任务并按回车即可保存并继续录入
+- 顶部可切换任务分组，列表中可直接完成当前待办
+- 所有待办都会进入内部滚动列表，不再隐藏第 9 项及后续任务
+- 右下角“更多”菜单可选择紧凑、标准、宽敞三档面板高度
+- 完成任务时先显示删除线与降噪状态，1.2 秒后再折叠消失；期间再次点击可撤销
+- 点击“打开完整序事”进入分组、筛选、搜索、排序、同步等完整管理界面
+- 点击面板外部会自动收起；关闭完整窗口不会退出菜单栏进程
+- 从面板右下角的更多菜单选择“退出序事”可完全退出
+
 ### 打包本机 App
 
 ```bash
-# 生成 Slate.app（含临时自签名）
+# 生成 序事.app（含临时自签名）
 ./Scripts/build-app.sh
 
 # 打开
-open Dist/Slate.app
+open Dist/序事.app
 ```
 
-> 产物位于 `Dist/Slate.app`，可直接拖入 Applications 文件夹。脚本使用临时签名，
+> 产物位于 `Dist/序事.app`，可直接拖入 Applications 文件夹。脚本使用临时签名，
 > 适合本机开发和测试；面向其他用户发布前需使用 Developer ID 签名并完成 Apple 公证。
+
+### 构建 macOS 正式发布包
+
+正式分发脚本要求本机已安装 Developer ID Application 证书，并已通过
+`notarytool store-credentials` 保存公证凭据：
+
+```bash
+SLATE_VERSION=1.1.0 \
+SLATE_BUILD_NUMBER=2 \
+SLATE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+SLATE_NOTARY_PROFILE="slate-notary" \
+./Scripts/build-macos-release.sh
+```
+
+可通过 `SLATE_BUNDLE_ID` 覆盖默认的 `com.thevipsong.slate`。脚本会执行 Hardened
+Runtime 签名、Apple 公证、票据装订、Gatekeeper 校验，并生成
+`Dist/序事-macOS-<版本>.zip` 与对应的 SHA-256 文件。
 
 ### 运行测试
 
@@ -94,7 +146,8 @@ Slate/
 ├── Sources/
 │   └── TodoList/
 │       ├── App/
-│       │   └── TodoListApp.swift         # 应用入口 + 命令菜单（撤销/搜索/新建）
+│       │   ├── TodoListApp.swift         # 菜单栏应用入口
+│       │   └── SlateMenuBarController.swift # 状态项、全局快捷键、Popover 与完整窗口
 │       ├── Models/
 │       │   ├── TodoItem.swift            # 任务模型（含到期日）
 │       │   ├── TodoGroup.swift           # 分组模型
@@ -109,12 +162,15 @@ Slate/
 │       │   ├── TodoListView.swift        # 任务列表 + 空状态
 │       │   ├── TodoRowView.swift         # 单行任务（含到期日 chip）
 │       │   ├── TodoInputView.swift       # 底栏输入区 + 日历按钮
+│       │   ├── MenuBarQuickView.swift    # 菜单栏快速捕获面板
 │       │   ├── CalendarPickerView.swift  # 自定义深色日历面板
 │       │   ├── BulkActionBar.swift       # 批量操作栏
 │       │   ├── AppTheme.swift            # 主题 / 字体 / 天气城市配置
 │       │   └── AppColors.swift           # 全局色板
 │       └── Services/
 │           ├── TodoFileStore.swift       # JSON 读写：原子写 / 双备份 / 版本迁移
+│           ├── SlateMergeEngine.swift    # 三方合并与冲突处理
+│           ├── SlateSyncCoordinator.swift # Supabase 版本化同步
 │           ├── WeatherService.swift      # 天气获取 + 每日名言
 │           └── TodoReminderService.swift # 本地提醒
 ├── Tests/
@@ -122,10 +178,18 @@ Slate/
 │       ├── TodoViewModelTests.swift      # 视图模型测试
 │       ├── TodoFileStoreTests.swift      # 存储层测试
 │       ├── WeatherServiceTests.swift     # 天气 / 名言测试
-│       └── TodoReminderServiceTests.swift # 提醒服务测试
+│       ├── TodoReminderServiceTests.swift # 提醒服务测试
+│       └── SupabaseSyncIntegrationTests.swift # 可选真实同步测试
 ├── Scripts/
 │   ├── build-app.sh                      # Release 打包脚本
+│   ├── build-macos-release.sh            # Developer ID 签名、公证与校验
+│   ├── build-android.sh                  # Android 测试与 APK 构建
+│   ├── build-android-release.sh          # Android 签名发布版构建
+│   ├── generate-android-signing.sh       # 首次生成本机发布签名
+│   ├── start-local-sync.sh               # 启动精简本地 Supabase
+│   ├── run-sync-integration.sh           # Auth / RLS / RPC 集成验证
 │   └── run-tests.sh                      # CLT 兼容测试脚本
+├── android/                              # Kotlin + Jetpack Compose Android 客户端
 ├── Resources/
 │   └── AppIcon.icns                      # App 图标
 ├── .github/
@@ -154,12 +218,17 @@ Slate/
 - [x] 严格单选
 - [x] 同组拖拽排序 + 右键跨组移动
 - [x] 纯本地 JSON 存储（原子写 + 备份 + 迁移）
-- [x] 52 个单元测试
+- [x] 62 项自动化测试
 - [x] 到期日本地通知提醒
+- [x] Android 原生客户端基础版
+- [x] Android 紧凑首页、滑动操作、长按排序与底部抽屉编辑
+- [x] macOS / Android JSON 双向导入导出
+- [x] Mac / Android 可选 Supabase 自动同步
 - [ ] iCloud 同步（或在偏好中可选）
 - [ ] 从 Things 3 / 提醒事项导入
 - [ ] 标签系统
-- [ ] 窗口常驻置顶 / 菜单栏迷你模式
+- [x] 菜单栏快速捕获模式 + 全局快捷键
+- [ ] 窗口常驻置顶
 - [ ] 自定义快捷键
 
 ---

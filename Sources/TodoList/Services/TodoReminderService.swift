@@ -40,7 +40,7 @@ final class TodoReminderService: ObservableObject, TodoReminderScheduling {
                 guard granted else {
                     isEnabled = false
                     defaults.set(false, forKey: Self.enabledDefaultsKey)
-                    statusMessage = "通知权限未开启。可稍后在系统设置中允许 Slate 发送通知。"
+                    statusMessage = "通知权限未开启。可稍后在系统设置中允许序事发送通知。"
                     return
                 }
                 isEnabled = true
@@ -90,7 +90,7 @@ final class TodoReminderService: ObservableObject, TodoReminderScheduling {
             isEnabled = false
             defaults.set(false, forKey: Self.enabledDefaultsKey)
             removeSlateNotifications()
-            statusMessage = "Slate 的通知权限已关闭，到期提醒已停用。"
+            statusMessage = "序事的通知权限已关闭，到期提醒已停用。"
             return
         }
 

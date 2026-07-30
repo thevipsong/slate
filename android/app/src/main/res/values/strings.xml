@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">序事</string>
+    <string name="widget_description">查看待办并快速添加任务</string>
+    <string name="widget_add_task">添加任务</string>
+    <string name="widget_add_symbol">+</string>
+    <string name="widget_empty">今天没有待办</string>
+    <string name="shortcut_quick_add">新建任务</string>
+    <string name="shortcut_quick_add_long">快速添加序事任务</string>
+</resources>

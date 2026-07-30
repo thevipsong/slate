@@ -56,6 +56,20 @@ final class TodoViewModelTests {
         #expect(!vm.canAdd)
     }
 
+    @Test func quickAddUsesExplicitDraftWithoutOverwritingMainWindowDraft() {
+        let vm = makeVM()
+        let dueDate = Date(timeIntervalSince1970: 1_800_000_000)
+        vm.newTitle = "主窗口里尚未提交的内容"
+
+        let added = vm.addTodo(title: "  菜单栏任务  ", dueDate: dueDate)
+
+        #expect(added)
+        #expect(vm.items.count == 1)
+        #expect(vm.items[0].title == "菜单栏任务")
+        #expect(vm.items[0].dueDate == dueDate)
+        #expect(vm.newTitle == "主窗口里尚未提交的内容")
+    }
+
     @Test func toggleCompletionSetsAndClearsTimestamp() {
         let fixed = Date(timeIntervalSince1970: 1_700_000_000)
         var useFixed = false
@@ -70,6 +84,23 @@ final class TodoViewModelTests {
         vm.toggleCompletion(of: vm.items[0])
         #expect(!vm.items[0].isCompleted)
         #expect(vm.items[0].completedAt == nil)
+    }
+
+    @Test func settingCompletionIsIdempotent() {
+        let fixed = Date(timeIntervalSince1970: 1_700_000_000)
+        let vm = makeVM(now: { fixed })
+        let item = addTodos(vm, ["任务"])[0]
+
+        vm.setCompletion(true, for: item.id)
+        vm.setCompletion(true, for: item.id)
+
+        #expect(vm.items[0].isCompleted)
+        #expect(vm.items[0].completedAt == fixed)
+
+        vm.undo()
+        #expect(!vm.items[0].isCompleted)
+        vm.undo()
+        #expect(vm.items.isEmpty, "重复设为完成不应产生额外撤销步骤")
     }
 
     // MARK: - moveItem 插入点

@@ -8,12 +8,18 @@ struct HeaderView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            // 左列：产品名 + 每日一句
+            // 左列：中文产品名、英文副标题 + 每日一句
             VStack(alignment: .leading, spacing: 4) {
-                Text("Slate")
-                    .font(theme.font(22, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .tracking(-0.3)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("序事")
+                        .font(theme.font(22, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .tracking(-0.3)
+                    Text("Slate")
+                        .font(theme.font(11, weight: .semibold))
+                        .foregroundStyle(AppColors.inactiveText)
+                        .tracking(0.4)
+                }
 
                 Text(weatherService.quoteText.isEmpty ? "Stay focused." : weatherService.quoteText)
                     .font(theme.font(13))
@@ -206,6 +212,33 @@ struct ThemePickerView: View {
                     )
                 )
             }
+            Section("数据") {
+                Button("导入序事（Slate v3）JSON…") {
+                    NotificationCenter.default.post(name: .importSlateArchive, object: nil)
+                }
+                Button("导出序事（Slate v3）JSON…") {
+                    NotificationCenter.default.post(name: .exportSlateArchive, object: nil)
+                }
+            }
+            Section("同步") {
+                if viewModel.isSyncSignedIn {
+                    Text(viewModel.syncAccountEmail ?? "已登录")
+                    Button(viewModel.isSyncing ? "正在同步…" : "立即同步") {
+                        viewModel.syncNow()
+                    }
+                    .disabled(viewModel.isSyncing)
+                    Button("退出同步账户") {
+                        viewModel.signOutSync()
+                    }
+                } else {
+                    Button("配置双端同步…") {
+                        NotificationCenter.default.post(name: .configureSlateSync, object: nil)
+                    }
+                }
+                if let status = viewModel.syncStatusMessage {
+                    Text(status)
+                }
+            }
         } label: {
             Image(systemName: "textformat")
                 .font(theme.font(12, weight: .semibold))
@@ -218,6 +251,6 @@ struct ThemePickerView: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .help("外观、字体、城市与提醒")
+        .help("外观、字体、城市、提醒与数据")
     }
 }

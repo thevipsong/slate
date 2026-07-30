@@ -1,0 +1,7 @@
+<resources>
+    <color name="slate_launcher_background">#276FD6</color>
+    <color name="widget_background">#FFFFFF</color>
+    <color name="widget_text">#171B22</color>
+    <color name="widget_muted">#5B6471</color>
+    <color name="widget_primary">#1769D2</color>
+</resources>

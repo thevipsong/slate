@@ -100,6 +100,11 @@ struct TodoFileStore: Sendable {
             throw CocoaError(.fileReadNoSuchFile)
         }
         let data = try Data(contentsOf: url)
+        return try decode(data)
+    }
+
+    /// 解码用户选择的 Slate JSON 文件；与本地加载共用同一套版本迁移规则。
+    func decode(_ data: Data) throws -> TodoArchive {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         // 单次解码取版本号，避免 JSONSerialization 全量预解析一遍
@@ -108,11 +113,11 @@ struct TodoFileStore: Sendable {
         switch version {
         case 3:
             let archive = try decoder.decode(TodoArchive.self, from: data)
-            return archive
+            return archive.normalized()
         case 0, 1, 2:
             // 旧 v1/v2 兼容：尽力把 title 提取出来
             let legacy = try decoder.decode(LegacyArchive.self, from: data)
-            return legacy.migratedToV3()
+            return legacy.migratedToV3().normalized()
         default:
             throw StoreError.invalidArchiveVersion(version)
         }
@@ -144,10 +149,7 @@ struct TodoFileStore: Sendable {
             try fileManager.copyItem(at: fileURL, to: backupURL)
         }
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(archive)
+        let data = try encode(archive)
 
         let tempURL = directory.appendingPathComponent(".todos.\(UUID().uuidString).tmp")
         try data.write(to: tempURL, options: .atomic)
@@ -157,9 +159,17 @@ struct TodoFileStore: Sendable {
             try fileManager.moveItem(at: tempURL, to: fileURL)
         }
     }
+
+    /// 生成可与 Android 版交换的 Slate v3 JSON。
+    func encode(_ archive: TodoArchive) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(archive.normalized())
+    }
 }
 
-struct TodoArchive: Codable, Equatable {
+struct TodoArchive: Codable, Equatable, Sendable {
     static let currentVersion = 3
 
     let version: Int
@@ -174,6 +184,52 @@ struct TodoArchive: Codable, Equatable {
         self.version = version
         self.items = items
         self.groups = groups
+    }
+}
+
+extension TodoArchive {
+    /// Repairs external or legacy archives before they enter persistence or
+    /// merge code. Duplicate IDs keep their last serialized value while their
+    /// first position remains stable, making the repair deterministic.
+    func normalized() -> TodoArchive {
+        var groupOrder = [UUID]()
+        var groupsByID = [UUID: TodoGroup]()
+        for group in groups {
+            if groupsByID[group.id] == nil {
+                groupOrder.append(group.id)
+            }
+            groupsByID[group.id] = group
+        }
+        var repairedGroups = groupOrder.compactMap { groupsByID[$0] }
+        if repairedGroups.isEmpty {
+            repairedGroups = [TodoGroup.defaultGroup()]
+        }
+
+        let validGroupIDs = Set(repairedGroups.map(\.id))
+        let fallbackGroupID = repairedGroups[0].id
+        var itemOrder = [UUID]()
+        var itemsByID = [UUID: TodoItem]()
+        for item in items {
+            if itemsByID[item.id] == nil {
+                itemOrder.append(item.id)
+            }
+            itemsByID[item.id] = item
+        }
+        let repairedItems = itemOrder.compactMap { itemID -> TodoItem? in
+            guard var item = itemsByID[itemID] else { return nil }
+            item.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !item.title.isEmpty else { return nil }
+            if item.groupID == nil || !validGroupIDs.contains(item.groupID!) {
+                item.groupID = fallbackGroupID
+            }
+            return item
+        }
+
+        return TodoArchive(
+            version: TodoArchive.currentVersion,
+            items: repairedItems,
+            groups: repairedGroups
+        )
     }
 }
 

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="quick_add"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/shortcut_quick_add"
+        android:shortcutLongLabel="@string/shortcut_quick_add_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.thevipsong.slate.MainActivity"
+            android:targetPackage="com.thevipsong.slate">
+            <extra
+                android:name="focus_quick_add"
+                android:value="true" />
+        </intent>
+    </shortcut>
+</shortcuts>

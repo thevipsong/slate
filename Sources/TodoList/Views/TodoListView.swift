@@ -34,6 +34,11 @@ struct TodoListView: View {
             Text(emptyTitle)
                 .font(theme.font(14, weight: .medium))
                 .foregroundStyle(AppColors.secondaryText)
+            if viewModel.filter == .all {
+                Text("记下每件事，按自己的节奏完成。")
+                    .font(theme.font(12))
+                    .foregroundStyle(AppColors.inactiveText)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

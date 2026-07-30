@@ -21,6 +21,14 @@ final class TodoViewModel: ObservableObject {
     @Published var selectedItemIDs: Set<UUID> = []
     @Published var selectedGroupID: UUID
     @Published private(set) var errorMessage: String?
+    @Published var syncProjectURL = UserDefaults.standard.string(forKey: "sync.projectURL")
+        ?? SlateCloudDefaults.projectURL
+    @Published var syncPublishableKey = UserDefaults.standard.string(forKey: "sync.publishableKey")
+        ?? SlateCloudDefaults.publishableKey
+    @Published private(set) var syncAccountEmail: String?
+    @Published private(set) var isSyncing = false
+    @Published private(set) var lastSyncedAt: Date?
+    @Published private(set) var syncStatusMessage: String?
 
     /// Shift 范围选择的锚点（最后一次无修饰点击的行）
     private var selectionAnchorID: UUID?
@@ -30,6 +38,8 @@ final class TodoViewModel: ObservableObject {
     private let store: TodoFileStore
     private let now: () -> Date
     private weak var reminderScheduler: TodoReminderScheduling?
+    private let syncStateStore: SlateSyncStateStore
+    private let syncCoordinator: SlateSyncCoordinator
 
     // 派生属性缓存
     private var itemsByGroup: [UUID: [TodoItem]] = [:]
@@ -39,6 +49,9 @@ final class TodoViewModel: ObservableObject {
 
     // 防抖持久化
     private var persistTask: Task<Void, Never>?
+    private var autoSyncTask: Task<Void, Never>?
+    private var remoteRefreshTask: Task<Void, Never>?
+    private var isRefreshingRemote = false
     private var persistGeneration: UInt64 = 0
     /// 所有落盘操作走这条串行队列：
     /// 防抖只能取消还在 sleep 的任务，已进入 save 的任务若与新任务并发，
@@ -63,10 +76,30 @@ final class TodoViewModel: ObservableObject {
         self.store = store
         self.now = now
         self.reminderScheduler = reminderScheduler
+        let syncBaseDirectory = store.fileURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let stateStore = SlateSyncStateStore(baseDirectory: syncBaseDirectory)
+        let sessionStore = SlateSecureSessionStore(namespace: store.fileURL.path)
+        self.syncStateStore = stateStore
+        self.syncCoordinator = SlateSyncCoordinator(
+            stateStore: stateStore,
+            sessionStore: sessionStore
+        )
         let initial = TodoGroup.defaultGroup()
         self.selectedGroupID = initial.id
         self.groups = [initial]
         load()
+        Task { [weak self] in
+            guard let self else { return }
+            let session = await self.syncCoordinator.storedSession()
+            let syncState = await self.syncStateStore.load()
+            self.syncAccountEmail = session?.email
+            self.lastSyncedAt = syncState.lastSyncedAt == .distantPast
+                ? nil
+                : syncState.lastSyncedAt
+            self.startAutomaticSync()
+        }
     }
 
     // MARK: - 派生属性
@@ -154,10 +187,10 @@ final class TodoViewModel: ObservableObject {
 
     // MARK: - 任务 CRUD
 
-    func addTodo() {
-        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return }
-
+    @discardableResult
+    func addTodo(title rawTitle: String, dueDate: Date? = nil) -> Bool {
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return false }
         pushUndo()
         let creationDate = now()
         let nextOrder = nextSortOrder(for: selectedGroupID)
@@ -166,21 +199,36 @@ final class TodoViewModel: ObservableObject {
             createdAt: creationDate,
             groupID: selectedGroupID,
             sortOrder: nextOrder,
-            dueDate: newDueDate
+            dueDate: dueDate
         )
         items.append(newItem)
         rebuildCacheForGroup(selectedGroupID)
         refreshVisible()
+        schedulePersist()
+        return true
+    }
+
+    func addTodo() {
+        guard addTodo(title: newTitle, dueDate: newDueDate) else { return }
         newTitle = ""
         newDueDate = nil
-        schedulePersist()
     }
 
     func toggleCompletion(of item: TodoItem) {
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        guard let current = items.first(where: { $0.id == item.id }) else { return }
+        setCompletion(!current.isCompleted, for: current.id)
+    }
+
+    /// 将任务设为明确的完成状态。与 toggle 不同，重复调用不会反向切换，
+    /// 适合菜单栏延迟确认、同步回写等可能与其他更新并发的场景。
+    func setCompletion(_ completed: Bool, for itemID: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == itemID }),
+              items[index].isCompleted != completed else {
+            return
+        }
         pushUndo()
-        items[index].isCompleted.toggle()
-        items[index].completedAt = items[index].isCompleted ? now() : nil
+        items[index].isCompleted = completed
+        items[index].completedAt = completed ? now() : nil
         rebuildCacheForGroup(items[index].groupID ?? selectedGroupID)
         refreshVisible()
         schedulePersist()
@@ -429,6 +477,290 @@ final class TodoViewModel: ObservableObject {
         schedulePersist()
     }
 
+    // MARK: - 数据交换
+
+    func exportArchiveData() throws -> Data {
+        try store.encode(makeArchiveSnapshot())
+    }
+
+    /// 使用导入文件整体替换当前数据。调用方必须先向用户确认。
+    func importArchiveData(_ data: Data) throws {
+        let imported = try store.decode(data)
+        pushUndo()
+
+        var importedGroups = imported.groups.sorted { $0.sortOrder < $1.sortOrder }
+        if importedGroups.isEmpty {
+            importedGroups = [TodoGroup.defaultGroup()]
+        }
+        let fallbackGroupID = importedGroups[0].id
+        let validGroupIDs = Set(importedGroups.map(\.id))
+        let importedItems = imported.items
+            .filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map { item in
+                var repaired = item
+                if repaired.groupID == nil || !validGroupIDs.contains(repaired.groupID!) {
+                    repaired.groupID = fallbackGroupID
+                }
+                return repaired
+            }
+
+        groups = importedGroups
+        items = importedItems
+        selectedGroupID = fallbackGroupID
+        editingItemID = nil
+        editingTitle = ""
+        selectedItemIDs.removeAll()
+        selectionAnchorID = nil
+        rebuildAllCaches()
+        refreshVisible()
+        persistImmediately()
+        Task { await syncStateStore.markLocalChange() }
+        scheduleAutoSync()
+    }
+
+    // MARK: - 双端同步
+
+    var isSyncConfigured: Bool {
+        SupabaseConfiguration(
+            projectURL: syncProjectURL,
+            publishableKey: syncPublishableKey
+        ).isAllowedEndpoint && !syncPublishableKey.isEmpty
+    }
+
+    var isSyncSignedIn: Bool {
+        syncAccountEmail != nil
+    }
+
+    func configureAndAuthenticateSync(
+        email: String,
+        password: String,
+        createAccount: Bool
+    ) {
+        let configuration = SupabaseConfiguration(
+            projectURL: syncProjectURL,
+            publishableKey: syncPublishableKey
+        )
+        guard configuration.isAllowedEndpoint,
+              !syncPublishableKey.isEmpty,
+              !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              password.count >= 6 else {
+            errorMessage = "请填写有效的项目 URL、publishable key、邮箱和至少 6 位密码。"
+            return
+        }
+
+        isSyncing = true
+        syncStatusMessage = "正在连接同步账户…"
+        UserDefaults.standard.set(
+            syncProjectURL.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: "sync.projectURL"
+        )
+        UserDefaults.standard.set(
+            syncPublishableKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: "sync.publishableKey"
+        )
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let session: StoredSupabaseSession?
+                if createAccount {
+                    session = try await syncCoordinator.signUp(
+                        configuration: configuration,
+                        email: email,
+                        password: password
+                    )
+                } else {
+                    session = try await syncCoordinator.signIn(
+                        configuration: configuration,
+                        email: email,
+                        password: password
+                    )
+                }
+                isSyncing = false
+                if let session {
+                    syncAccountEmail = session.email
+                    syncStatusMessage = "同步账户已登录。"
+                    startAutomaticSync()
+                    syncNow()
+                } else {
+                    syncStatusMessage = "注册成功，请验证邮件后再登录。"
+                }
+            } catch {
+                isSyncing = false
+                errorMessage = "同步账户操作失败：\(error.localizedDescription)"
+                syncStatusMessage = nil
+            }
+        }
+    }
+
+    func syncNow() {
+        performSync(announcesSuccess: true)
+    }
+
+    private func performSync(announcesSuccess: Bool) {
+        guard isSyncConfigured,
+              isSyncSignedIn,
+              !isSyncing,
+              !isRefreshingRemote else {
+            if !isSyncSignedIn {
+                errorMessage = "请先配置并登录同步账户。"
+            }
+            return
+        }
+        let configuration = SupabaseConfiguration(
+            projectURL: syncProjectURL,
+            publishableKey: syncPublishableKey
+        )
+        let startingSnapshot = makeArchiveSnapshot()
+        isSyncing = true
+        syncStatusMessage = "正在同步…"
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let outcome = try await syncCoordinator.sync(
+                    localArchive: startingSnapshot,
+                    configuration: configuration
+                )
+                applySyncOutcome(
+                    outcome,
+                    startingSnapshot: startingSnapshot,
+                    announcesSuccess: announcesSuccess
+                )
+            } catch {
+                isSyncing = false
+                errorMessage = "同步失败：\(error.localizedDescription)"
+                syncStatusMessage = nil
+            }
+        }
+    }
+
+    func syncIfConfigured() {
+        if isSyncConfigured, isSyncSignedIn {
+            startAutomaticSync()
+            performSync(announcesSuccess: false)
+        }
+    }
+
+    func startAutomaticSync() {
+        guard isSyncConfigured, isSyncSignedIn, remoteRefreshTask == nil else {
+            return
+        }
+        remoteRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                self?.refreshFromRemote()
+            }
+        }
+    }
+
+    func stopAutomaticSync() {
+        remoteRefreshTask?.cancel()
+        remoteRefreshTask = nil
+    }
+
+    private func refreshFromRemote() {
+        guard isSyncConfigured,
+              isSyncSignedIn,
+              !isSyncing,
+              !isRefreshingRemote else {
+            return
+        }
+        let configuration = SupabaseConfiguration(
+            projectURL: syncProjectURL,
+            publishableKey: syncPublishableKey
+        )
+        let startingSnapshot = makeArchiveSnapshot()
+        isRefreshingRemote = true
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isRefreshingRemote = false }
+            do {
+                guard let outcome = try await syncCoordinator.refreshIfRemoteChanged(
+                    localArchive: startingSnapshot,
+                    configuration: configuration
+                ) else {
+                    return
+                }
+                applySyncOutcome(
+                    outcome,
+                    startingSnapshot: startingSnapshot,
+                    announcesSuccess: false
+                )
+            } catch {
+                // Background refresh is intentionally quiet. The next foreground
+                // tick retries, while a manual sync still surfaces the full error.
+            }
+        }
+    }
+
+    private func applySyncOutcome(
+        _ outcome: SlateSyncOutcome,
+        startingSnapshot: TodoArchive,
+        announcesSuccess: Bool
+    ) {
+        let current = makeArchiveSnapshot()
+        let finalArchive: TodoArchive
+        if current == startingSnapshot {
+            finalArchive = outcome.archive
+        } else {
+            finalArchive = SlateMergeEngine.merge(
+                base: startingSnapshot,
+                local: current,
+                remote: outcome.archive,
+                preferLocalOnConflict: true
+            ).archive
+        }
+        if finalArchive != current {
+            replaceArchiveFromSync(finalArchive)
+        }
+        lastSyncedAt = outcome.syncedAt
+        isSyncing = false
+        if announcesSuccess {
+            syncStatusMessage = outcome.conflictCount == 0
+                ? "同步完成。"
+                : "同步完成，已自动处理 \(outcome.conflictCount) 处冲突。"
+        }
+    }
+
+    func signOutSync() {
+        stopAutomaticSync()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await syncCoordinator.signOut()
+                syncAccountEmail = nil
+                lastSyncedAt = nil
+                syncStatusMessage = "已退出同步账户，本地待办不会删除。"
+            } catch {
+                errorMessage = "退出同步账户失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func replaceArchiveFromSync(_ archive: TodoArchive) {
+        groups = archive.groups.isEmpty ? [TodoGroup.defaultGroup()] : archive.groups
+        let fallbackGroupID = groups[0].id
+        let validGroupIDs = Set(groups.map(\.id))
+        items = archive.items.map { item in
+            var repaired = item
+            if repaired.groupID == nil || !validGroupIDs.contains(repaired.groupID!) {
+                repaired.groupID = fallbackGroupID
+            }
+            return repaired
+        }
+        if !validGroupIDs.contains(selectedGroupID) {
+            selectedGroupID = fallbackGroupID
+        }
+        selectedItemIDs.removeAll()
+        editingItemID = nil
+        rebuildAllCaches()
+        refreshVisible()
+        persistImmediately()
+    }
+
     // MARK: - 错误与持久化
 
     func clearError() {
@@ -474,6 +806,8 @@ final class TodoViewModel: ObservableObject {
 
     func schedulePersist(delay: Duration = .milliseconds(250)) {
         reminderScheduler?.sync(items: items)
+        Task { await syncStateStore.markLocalChange() }
+        scheduleAutoSync()
         persistTask?.cancel()
         persistGeneration &+= 1
         let generation = persistGeneration
@@ -491,6 +825,21 @@ final class TodoViewModel: ObservableObject {
                 let message = "保存待办数据失败：\(error.localizedDescription)"
                 await self?.handleSaveError(message, generation: generation)
             }
+        }
+    }
+
+    private func scheduleAutoSync() {
+        guard isSyncConfigured, isSyncSignedIn else { return }
+        autoSyncTask?.cancel()
+        autoSyncTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            while self.isSyncing || self.isRefreshingRemote {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+            }
+            self.performSync(announcesSuccess: false)
         }
     }
 

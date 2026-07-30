@@ -1,6 +1,6 @@
 import Foundation
 
-struct TodoGroup: Identifiable, Codable, Equatable {
+struct TodoGroup: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     var name: String
     var sortOrder: Double

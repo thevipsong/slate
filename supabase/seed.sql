@@ -1,0 +1,1 @@
+-- Slate does not require seed data. Integration tests create isolated users and archives.
