@@ -151,7 +151,7 @@ final class AppTheme: ObservableObject {
 
 extension Animation {
     /// 快速反馈：hover、增删行、状态切换
-    static let quick = Animation.easeOut(duration: 0.18)
+    static let quick = Animation.easeInOut(duration: 0.18)
     /// 弹性位移：分组/筛选切换、拖放归位
     static let snappy = Animation.spring(response: 0.32, dampingFraction: 0.85)
 }

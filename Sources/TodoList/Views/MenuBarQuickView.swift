@@ -9,6 +9,7 @@ extension Notification.Name {
 struct MenuBarQuickView: View {
     @ObservedObject var viewModel: TodoViewModel
     @EnvironmentObject var theme: AppTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let onOpenMainWindow: () -> Void
     let onQuit: () -> Void
@@ -60,14 +61,15 @@ struct MenuBarQuickView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 11) {
+        HStack(alignment: .center, spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
-                .font(theme.font(20, weight: .semibold))
+                .font(theme.font(18, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(AppColors.accent)
+                .frame(width: 22, height: 22, alignment: .center)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("序事")
                         .font(theme.font(15, weight: .semibold))
@@ -86,7 +88,7 @@ struct MenuBarQuickView: View {
             Menu {
                 ForEach(viewModel.groups) { group in
                     Button {
-                        withAnimation(.snappy) {
+                        withAnimation(reduceMotion ? nil : .snappy) {
                             viewModel.selectGroup(group.id)
                         }
                         focusInput()
@@ -120,15 +122,17 @@ struct MenuBarQuickView: View {
             .menuIndicator(.hidden)
             .help("切换分组")
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 16)
+        .padding(.trailing, 20)
         .frame(height: 58)
     }
 
     private var quickInput: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             TextField("添加任务…", text: $draftTitle)
                 .textFieldStyle(.plain)
                 .font(theme.font(14, weight: .medium))
+                .padding(.leading, 4)
                 .focused($isInputFocused)
                 .onSubmit(submit)
                 .accessibilityLabel("添加新任务")
@@ -139,7 +143,8 @@ struct MenuBarQuickView: View {
                 Image(systemName: draftDueDate == nil ? "calendar" : "calendar.badge.exclamationmark")
                     .font(theme.font(12, weight: .semibold))
                     .foregroundStyle(draftDueDate == nil ? AppColors.secondaryText : AppColors.accent)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 30, height: 30, alignment: .center)
+                    .offset(y: 0.5)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -156,7 +161,8 @@ struct MenuBarQuickView: View {
                 Image(systemName: "arrow.up")
                     .font(theme.font(11, weight: .bold))
                     .foregroundStyle(draftTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? AppColors.secondaryText : .white)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 30, height: 30, alignment: .center)
+                    .offset(y: 0.5)
                     .background(
                         Circle().fill(
                             draftTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -171,7 +177,7 @@ struct MenuBarQuickView: View {
         }
         .padding(.leading, 12)
         .padding(.trailing, 8)
-        .frame(height: 42)
+        .frame(height: 44)
         .background(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .fill(Color.primary.opacity(0.045))
@@ -200,7 +206,7 @@ struct MenuBarQuickView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 4) {
+                    LazyVStack(spacing: 6) {
                         ForEach(pendingItems) { item in
                             MenuBarTaskRow(item: item, viewModel: viewModel)
                         }
@@ -218,7 +224,7 @@ struct MenuBarQuickView: View {
         HStack(spacing: 10) {
             Label("⌥Space", systemImage: "keyboard")
                 .font(theme.font(10, weight: .medium))
-                .foregroundStyle(AppColors.secondaryText)
+                .foregroundStyle(Color.primary.opacity(0.62))
 
             Spacer()
 
@@ -227,7 +233,7 @@ struct MenuBarQuickView: View {
                     .font(theme.font(11, weight: .semibold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(AppColors.inactiveText)
+            .foregroundStyle(Color.primary.opacity(0.72))
             .help("打开任务管理窗口")
 
             Menu {
@@ -276,9 +282,13 @@ private struct MenuBarTaskRow: View {
     let item: TodoItem
     @ObservedObject var viewModel: TodoViewModel
     @EnvironmentObject var theme: AppTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var isHovering = false
     @State private var isCompleting = false
+    @State private var showingDueDate = false
+    @State private var dueDateDraft: Date?
     @State private var completionTask: Task<Void, Never>?
 
     var body: some View {
@@ -328,41 +338,181 @@ private struct MenuBarTaskRow: View {
                         .opacity(isCompleting ? 0.45 : 1)
                 }
             }
+
+            quickActions
         }
-        .padding(.horizontal, 9)
-        .frame(height: 43)
+        .padding(.horizontal, 10)
+        .frame(height: 48)
         .background(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(isHovering && !isCompleting ? Color.primary.opacity(0.055) : Color.clear)
+                .fill(rowBackground)
         )
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(.quick) {
+            withAnimation(reduceMotion ? nil : .quick) {
                 isHovering = hovering
             }
         }
+        .popover(isPresented: $showingDueDate, arrowEdge: .bottom) {
+            CalendarPickerView(
+                selectedDate: $dueDateDraft,
+                onSelection: { date in
+                    viewModel.setDueDate(date, for: item.id)
+                }
+            ) {
+                showingDueDate = false
+            }
+            .environmentObject(theme)
+        }
+        .contextMenu {
+            Button(item.dueDate == nil ? "设置到期日" : "修改到期日") {
+                openDueDateEditor()
+            }
+            if item.dueDate != nil {
+                Button("清除到期日") {
+                    viewModel.setDueDate(nil, for: item.id)
+                }
+            }
+            Divider()
+            Button("删除", role: .destructive) {
+                deleteItem()
+            }
+        }
+    }
+
+    private var rowBackground: Color {
+        guard isHovering, !isCompleting else { return .clear }
+        return colorScheme == .dark
+            ? AppColors.accent.opacity(0.055)
+            : Color.black.opacity(0.04)
+    }
+
+    private var quickActions: some View {
+        HStack(spacing: 2) {
+            MenuBarRowActionButton(
+                systemName: item.dueDate == nil
+                    ? "calendar"
+                    : "calendar.badge.exclamationmark",
+                label: item.dueDate == nil ? "设置到期日" : "修改到期日"
+            ) {
+                openDueDateEditor()
+            }
+
+            MenuBarRowActionMenu {
+                Button(item.dueDate == nil ? "设置到期日" : "修改到期日") {
+                    openDueDateEditor()
+                }
+                if item.dueDate != nil {
+                    Button("清除到期日") {
+                        viewModel.setDueDate(nil, for: item.id)
+                    }
+                }
+                Divider()
+                Button("删除", role: .destructive) {
+                    deleteItem()
+                }
+            }
+        }
+        .frame(width: 58, alignment: .trailing)
+        .opacity(isHovering && !isCompleting ? 1 : 0)
+        .allowsHitTesting(isHovering && !isCompleting)
+        .accessibilityHidden(!isHovering || isCompleting)
+        .animation(reduceMotion ? nil : .quick, value: isHovering)
     }
 
     private func togglePendingCompletion() {
         if isCompleting {
             completionTask?.cancel()
             completionTask = nil
-            withAnimation(.quick) {
+            withAnimation(reduceMotion ? nil : .quick) {
                 isCompleting = false
             }
             return
         }
 
-        withAnimation(.quick) {
+        withAnimation(reduceMotion ? nil : .quick) {
             isCompleting = true
         }
         completionTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.2))
             guard !Task.isCancelled else { return }
-            withAnimation(.snappy) {
+            withAnimation(reduceMotion ? nil : .snappy) {
                 viewModel.setCompletion(true, for: item.id)
             }
             completionTask = nil
         }
+    }
+
+    private func openDueDateEditor() {
+        dueDateDraft = viewModel.items.first(where: { $0.id == item.id })?.dueDate
+        showingDueDate = true
+    }
+
+    private func deleteItem() {
+        withAnimation(reduceMotion ? nil : .quick) {
+            viewModel.delete(item)
+        }
+    }
+}
+
+private struct MenuBarRowActionButton: View {
+    let systemName: String
+    let label: String
+    let action: () -> Void
+
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 27, height: 27, alignment: .center)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.primary.opacity(0.64))
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isHovering ? Color.primary.opacity(0.07) : Color.clear)
+        )
+        .onHover { hovering in
+            withAnimation(reduceMotion ? nil : .quick) {
+                isHovering = hovering
+            }
+        }
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+private struct MenuBarRowActionMenu<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Menu {
+            content()
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 27, height: 27, alignment: .center)
+                .contentShape(Rectangle())
+                .foregroundStyle(Color.primary.opacity(0.64))
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isHovering ? Color.primary.opacity(0.07) : Color.clear)
+                )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .onHover { hovering in
+            withAnimation(reduceMotion ? nil : .quick) {
+                isHovering = hovering
+            }
+        }
+        .help("更多操作")
+        .accessibilityLabel("更多操作")
     }
 }
