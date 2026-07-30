@@ -95,6 +95,10 @@ class SlateRepository(
         item.copy(isDeleted = true, updatedAt = Instant.now(), revision = revision)
     }
 
+    suspend fun restoreTodo(id: String) = mutateItem(id) { item, revision ->
+        item.copy(isDeleted = false, updatedAt = Instant.now(), revision = revision)
+    }
+
     suspend fun moveTodo(id: String, targetGroupID: String) = mutateItem(id) { item, revision ->
         val nextOrder = _archive.value.items
             .filter { it.groupID == targetGroupID && !it.isDeleted }

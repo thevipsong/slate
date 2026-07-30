@@ -55,7 +55,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Slate 版本或提交
+      label: 序事版本或提交
       placeholder: 例如 1.0.0 或 6fdef7b
 
   - type: textarea

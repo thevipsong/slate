@@ -65,14 +65,8 @@ data class CloudSyncRecord(
 )
 
 @Serializable
-data class CloudArchiveRecord(
-    val revision: Long,
-    val archive: SlateArchive,
-    @SerialName("device_id")
-    val deviceID: String,
-    @Serializable(with = InstantIsoSerializer::class)
-    @SerialName("updated_at")
-    val updatedAt: Instant
+data class CloudRevisionRecord(
+    val revision: Long
 )
 
 @Serializable

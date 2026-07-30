@@ -28,7 +28,7 @@ mkdir -p "$output_dir"
 )
 
 source_apk="$android_root/app/build/outputs/apk/release/app-release.apk"
-target_apk="$output_dir/Slate-Android-release.apk"
+target_apk="$output_dir/序事-Android-release.apk"
 cp "$source_apk" "$target_apk"
 
 apksigner_path="$ANDROID_HOME/build-tools/36.0.0/apksigner"

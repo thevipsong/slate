@@ -29,7 +29,7 @@ struct SyncSetupView: View {
                 Button("关闭") { dismiss() }
             }
 
-            GroupBox("Slate Cloud") {
+            GroupBox("序事云同步") {
                 Label(
                     "云端已配置，账户数据通过行级安全策略隔离。",
                     systemImage: "checkmark.shield.fill"

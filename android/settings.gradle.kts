@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "SlateAndroid"
 include(":app")
+include(":baselineprofile")

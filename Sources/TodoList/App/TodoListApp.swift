@@ -1,129 +1,70 @@
 import SwiftUI
 
+private enum SlatePreferencesMigration {
+    private static let legacyBundleIdentifier = "app.local.Slate"
+    private static let migrationKey = "migration.legacyBundlePreferences.v1"
+
+    static func runIfNeeded(defaults: UserDefaults = .standard) {
+        guard Bundle.main.bundleIdentifier != legacyBundleIdentifier,
+              !defaults.bool(forKey: migrationKey) else {
+            return
+        }
+
+        if let legacyValues = defaults.persistentDomain(
+            forName: legacyBundleIdentifier
+        ) {
+            for (key, value) in legacyValues where defaults.object(forKey: key) == nil {
+                defaults.set(value, forKey: key)
+            }
+        }
+        defaults.set(true, forKey: migrationKey)
+    }
+}
+
 @main
 struct TodoListApp: App {
+    @NSApplicationDelegateAdaptor(SlateApplicationDelegate.self) private var appDelegate
     @StateObject private var viewModel: TodoViewModel
-    @StateObject private var theme = AppTheme()
-    @StateObject private var weatherService = WeatherService()
+    @StateObject private var theme: AppTheme
+    @StateObject private var weatherService: WeatherService
     @StateObject private var reminderService: TodoReminderService
-    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var menuBarController: SlateMenuBarController
 
     init() {
+        SlatePreferencesMigration.runIfNeeded()
+
         let reminders = TodoReminderService()
+        let viewModel = TodoViewModel(reminderScheduler: reminders)
+        let theme = AppTheme()
+        let weatherService = WeatherService()
+
         _reminderService = StateObject(wrappedValue: reminders)
-        _viewModel = StateObject(
-            wrappedValue: TodoViewModel(reminderScheduler: reminders)
+        _viewModel = StateObject(wrappedValue: viewModel)
+        _theme = StateObject(wrappedValue: theme)
+        _weatherService = StateObject(wrappedValue: weatherService)
+        let menuBarController = SlateMenuBarController(
+            viewModel: viewModel,
+            theme: theme,
+            weatherService: weatherService,
+            reminderService: reminders
         )
+        _menuBarController = StateObject(wrappedValue: menuBarController)
+        appDelegate.configure(menuBarController: menuBarController)
     }
 
     var body: some Scene {
-        Window("Slate", id: "main") {
-            ContentView(viewModel: viewModel)
-                .environmentObject(theme)
-                .environmentObject(weatherService)
-                .environmentObject(reminderService)
-                .frame(minWidth: 760, idealWidth: 1040, minHeight: 640, idealHeight: 780)
-                .background(AmbientBackground())
-                .containerBackground(.regularMaterial, for: .window)
-                .preferredColorScheme(theme.preferredColorScheme)
+        Settings {
+            // 序事的设置与完整管理入口都位于菜单栏面板和主窗口中。
+            // 保留一个空 Settings scene 作为纯菜单栏应用的 SwiftUI 生命周期根。
+            EmptyView()
         }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentMinSize)
         .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("添加新任务") {
-                    NotificationCenter.default.post(name: .focusNewTodo, object: nil)
+            CommandGroup(replacing: .appTermination) {
+                Button("退出序事") {
+                    menuBarController.terminate()
                 }
-                .keyboardShortcut("n")
-            }
-            CommandGroup(after: .undoRedo) {
-                Button("搜索任务") {
-                    NotificationCenter.default.post(name: .focusSearch, object: nil)
-                }
-                .keyboardShortcut("f", modifiers: .command)
-                Divider()
-                Button("撤销") {
-                    viewModel.undo()
-                }
-                .keyboardShortcut("z", modifiers: .command)
-                .disabled(!viewModel.canUndo)
-            }
-            CommandMenu("任务") {
-                Button("编辑选中任务") {
-                    viewModel.beginEditingSelectedItem()
-                }
-                .keyboardShortcut(.return, modifiers: [])
-                .disabled(viewModel.selectedCount != 1)
-
-                Button("切换完成状态") {
-                    if let first = viewModel.visibleItems.first(where: { viewModel.selectedItemIDs.contains($0.id) }) {
-                        viewModel.toggleCompletion(of: first)
-                    }
-                }
-                .keyboardShortcut(.return, modifiers: [.command, .shift])
-                .disabled(viewModel.selectedCount != 1)
-
-                Button("删除选中任务") {
-                    viewModel.deleteSelected()
-                }
-                .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(viewModel.selectedCount == 0)
-
-                Divider()
-
-                Button("取消选择") {
-                    viewModel.clearSelection()
-                }
-                .keyboardShortcut(.escape, modifiers: [])
-                .disabled(!viewModel.hasEditableSelection)
-            }
-            CommandMenu("视图") {
-                Button("全部") {
-                    viewModel.clearSelection()
-                    viewModel.setFilter(.all)
-                }
-                .keyboardShortcut("1", modifiers: .command)
-
-                Button("待完成") {
-                    viewModel.clearSelection()
-                    viewModel.setFilter(.pending)
-                }
-                .keyboardShortcut("2", modifiers: .command)
-
-                Button("已完成") {
-                    viewModel.clearSelection()
-                    viewModel.setFilter(.completed)
-                }
-                .keyboardShortcut("3", modifiers: .command)
-
-                Divider()
-
-                Button("上一个分组") {
-                    cycleGroup(-1)
-                }
-                .keyboardShortcut("[", modifiers: .command)
-
-                Button("下一个分组") {
-                    cycleGroup(1)
-                }
-                .keyboardShortcut("]", modifiers: .command)
+                .keyboardShortcut("q")
             }
         }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .background {
-                viewModel.stopAutomaticSync()
-                viewModel.persistImmediately()
-            } else if phase == .active {
-                viewModel.startAutomaticSync()
-                viewModel.syncIfConfigured()
-            }
-        }
-    }
-
-    private func cycleGroup(_ delta: Int) {
-        guard let currentIdx = viewModel.groups.firstIndex(where: { $0.id == viewModel.selectedGroupID }),
-              !viewModel.groups.isEmpty else { return }
-        let nextIdx = (currentIdx + delta + viewModel.groups.count) % viewModel.groups.count
-        viewModel.selectGroup(viewModel.groups[nextIdx].id)
     }
 }

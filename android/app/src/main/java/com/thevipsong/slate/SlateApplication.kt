@@ -7,6 +7,7 @@ import com.thevipsong.slate.reminders.ReminderScheduler
 import com.thevipsong.slate.sync.LocalSyncStateStore
 import com.thevipsong.slate.sync.SecureSessionStore
 import com.thevipsong.slate.sync.SlateSyncCoordinator
+import com.thevipsong.slate.widget.SlateWidgetProvider
 
 class SlateApplication : Application() {
     val syncStateStore: LocalSyncStateStore by lazy {
@@ -20,7 +21,10 @@ class SlateApplication : Application() {
     val repository: SlateRepository by lazy {
         SlateRepository(
             store = SlateFileStore(this),
-            onLocalChange = syncStateStore::markLocalChange
+            onLocalChange = {
+                syncStateStore.markLocalChange()
+                SlateWidgetProvider.requestUpdate(this)
+            }
         )
     }
 

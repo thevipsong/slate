@@ -67,8 +67,8 @@ class SlateSyncCoordinator(
             sessionStore.save(session)
         }
         val localState = stateStore.load()
-        val remote = api.fetchArchive(session) ?: return null
-        if (remote.revision <= localState.remoteRevision) return null
+        val remoteRevision = api.fetchRevision(session) ?: return null
+        if (remoteRevision <= localState.remoteRevision) return null
         return sync(configuration)
     }
 

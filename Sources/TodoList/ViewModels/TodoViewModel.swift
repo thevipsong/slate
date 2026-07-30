@@ -187,10 +187,10 @@ final class TodoViewModel: ObservableObject {
 
     // MARK: - 任务 CRUD
 
-    func addTodo() {
-        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return }
-
+    @discardableResult
+    func addTodo(title rawTitle: String, dueDate: Date? = nil) -> Bool {
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return false }
         pushUndo()
         let creationDate = now()
         let nextOrder = nextSortOrder(for: selectedGroupID)
@@ -199,21 +199,36 @@ final class TodoViewModel: ObservableObject {
             createdAt: creationDate,
             groupID: selectedGroupID,
             sortOrder: nextOrder,
-            dueDate: newDueDate
+            dueDate: dueDate
         )
         items.append(newItem)
         rebuildCacheForGroup(selectedGroupID)
         refreshVisible()
+        schedulePersist()
+        return true
+    }
+
+    func addTodo() {
+        guard addTodo(title: newTitle, dueDate: newDueDate) else { return }
         newTitle = ""
         newDueDate = nil
-        schedulePersist()
     }
 
     func toggleCompletion(of item: TodoItem) {
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        guard let current = items.first(where: { $0.id == item.id }) else { return }
+        setCompletion(!current.isCompleted, for: current.id)
+    }
+
+    /// 将任务设为明确的完成状态。与 toggle 不同，重复调用不会反向切换，
+    /// 适合菜单栏延迟确认、同步回写等可能与其他更新并发的场景。
+    func setCompletion(_ completed: Bool, for itemID: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == itemID }),
+              items[index].isCompleted != completed else {
+            return
+        }
         pushUndo()
-        items[index].isCompleted.toggle()
-        items[index].completedAt = items[index].isCompleted ? now() : nil
+        items[index].isCompleted = completed
+        items[index].completedAt = completed ? now() : nil
         rebuildCacheForGroup(items[index].groupID ?? selectedGroupID)
         refreshVisible()
         schedulePersist()

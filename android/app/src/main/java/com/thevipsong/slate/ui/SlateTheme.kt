@@ -33,10 +33,13 @@ private val DarkColors = darkColorScheme(
     background = SlateDark,
     onBackground = SlateText,
     surface = SlateSurface,
+    surfaceContainerLow = Color(0xFF171C24),
+    surfaceContainer = Color(0xFF1C222C),
+    surfaceContainerHigh = Color(0xFF222A35),
     onSurface = SlateText,
     surfaceVariant = SlateSurfaceHigh,
     onSurfaceVariant = SlateMuted,
-    outline = Color(0xFF343C49),
+    outline = Color(0xFF3D4654),
     error = Color(0xFFFF6B72)
 )
 
@@ -51,6 +54,9 @@ private val LightColors = lightColorScheme(
     background = Color(0xFFF5F7FB),
     onBackground = Color(0xFF171B22),
     surface = Color.White,
+    surfaceContainerLow = Color(0xFFFAFBFD),
+    surfaceContainer = Color(0xFFFFFFFF),
+    surfaceContainerHigh = Color(0xFFF0F3F7),
     onSurface = Color(0xFF171B22),
     surfaceVariant = Color(0xFFEBEFF5),
     onSurfaceVariant = Color(0xFF5B6471),

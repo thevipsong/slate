@@ -8,12 +8,18 @@ struct HeaderView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            // 左列：产品名 + 每日一句
+            // 左列：中文产品名、英文副标题 + 每日一句
             VStack(alignment: .leading, spacing: 4) {
-                Text("Slate")
-                    .font(theme.font(22, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .tracking(-0.3)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("序事")
+                        .font(theme.font(22, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .tracking(-0.3)
+                    Text("Slate")
+                        .font(theme.font(11, weight: .semibold))
+                        .foregroundStyle(AppColors.inactiveText)
+                        .tracking(0.4)
+                }
 
                 Text(weatherService.quoteText.isEmpty ? "Stay focused." : weatherService.quoteText)
                     .font(theme.font(13))
@@ -207,10 +213,10 @@ struct ThemePickerView: View {
                 )
             }
             Section("数据") {
-                Button("导入 Slate JSON…") {
+                Button("导入序事（Slate v3）JSON…") {
                     NotificationCenter.default.post(name: .importSlateArchive, object: nil)
                 }
-                Button("导出 Slate JSON…") {
+                Button("导出序事（Slate v3）JSON…") {
                     NotificationCenter.default.post(name: .exportSlateArchive, object: nil)
                 }
             }

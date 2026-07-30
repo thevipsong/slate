@@ -4,14 +4,17 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.core.content.edit
 import com.thevipsong.slate.SlateApplication
 import com.thevipsong.slate.data.SlateArchive
 import com.thevipsong.slate.data.SlateThemeMode
+import com.thevipsong.slate.data.SlateTodoGroup
 import com.thevipsong.slate.data.SlateTodoItem
 import com.thevipsong.slate.data.TodoFilter
 import com.thevipsong.slate.sync.SupabaseConfiguration
 import com.thevipsong.slate.sync.SupabaseHTTPClient
 import com.thevipsong.slate.sync.SlateCloudDefaults
+import com.thevipsong.slate.widget.SlateWidgetProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +27,12 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
+data class SlateTaskSection(
+    val key: String,
+    val title: String,
+    val items: List<SlateTodoItem>
+)
+
 data class SlateUiState(
     val archive: SlateArchive = SlateArchive(),
     val selectedGroupID: String = "",
@@ -33,39 +42,116 @@ data class SlateUiState(
     val themeMode: SlateThemeMode = SlateThemeMode.DARK,
     val message: String? = null,
     val remindersEnabled: Boolean = false,
-    val sync: SyncSettingsUiState = SyncSettingsUiState()
-) {
-    val groups get() = archive.groups.filterNot { it.isDeleted }.sortedBy { it.sortOrder }
-    val visibleItems: List<SlateTodoItem>
-        get() {
-            val today = LocalDate.now()
-            return archive.items.asSequence()
-                .filterNot { it.isDeleted }
-                .filter { it.groupID == selectedGroupID }
-                .filter { item ->
-                    when (filter) {
-                        TodoFilter.ALL -> true
-                        TodoFilter.PENDING -> !item.isCompleted
-                        TodoFilter.COMPLETED -> item.isCompleted
-                        TodoFilter.OVERDUE -> !item.isCompleted && item.dueDate
-                            ?.atZone(ZoneId.systemDefault())
-                            ?.toLocalDate()
-                            ?.isBefore(today) == true
-                    }
-                }
-                .filter { search.isBlank() || it.title.contains(search.trim(), ignoreCase = true) }
-                .sortedWith(
-                    compareBy<SlateTodoItem> { it.sortOrder ?: Double.MAX_VALUE }
-                        .thenBy { it.createdAt }
-                )
-                .toList()
+    val sync: SyncSettingsUiState = SyncSettingsUiState(),
+    val groups: List<SlateTodoGroup> = emptyList(),
+    val visibleItems: List<SlateTodoItem> = emptyList(),
+    val taskSections: List<SlateTaskSection> = emptyList(),
+    val groupPendingCounts: Map<String, Int> = emptyMap(),
+    val totalCount: Int = 0,
+    val pendingCount: Int = 0,
+    val selectedGroupPendingCount: Int = 0
+)
+
+private fun buildSlateUiState(
+    archive: SlateArchive,
+    selectedGroupID: String,
+    filter: TodoFilter,
+    search: String,
+    selectedItemID: String?,
+    themeMode: SlateThemeMode,
+    message: String?,
+    remindersEnabled: Boolean,
+    sync: SyncSettingsUiState
+): SlateUiState {
+    val today = LocalDate.now()
+    val zone = ZoneId.systemDefault()
+    val groups = archive.groups
+        .asSequence()
+        .filterNot(SlateTodoGroup::isDeleted)
+        .sortedBy(SlateTodoGroup::sortOrder)
+        .toList()
+    val activeItems = archive.items.filterNot(SlateTodoItem::isDeleted)
+    val groupPendingCounts = activeItems
+        .asSequence()
+        .filterNot(SlateTodoItem::isCompleted)
+        .groupingBy { it.groupID.orEmpty() }
+        .eachCount()
+    val query = search.trim()
+    val visibleItems = activeItems.asSequence()
+        .filter { it.groupID == selectedGroupID }
+        .filter { item ->
+            when (filter) {
+                TodoFilter.ALL -> true
+                TodoFilter.PENDING -> !item.isCompleted
+                TodoFilter.COMPLETED -> item.isCompleted
+                TodoFilter.OVERDUE -> !item.isCompleted && item.dueDate
+                    ?.atZone(zone)
+                    ?.toLocalDate()
+                    ?.isBefore(today) == true
+            }
         }
-    val totalCount get() = archive.items.count { !it.isDeleted }
-    val pendingCount get() = archive.items.count { !it.isDeleted && !it.isCompleted }
-    val selectedGroupPendingCount
-        get() = archive.items.count {
-            !it.isDeleted && !it.isCompleted && it.groupID == selectedGroupID
+        .filter { query.isEmpty() || it.title.contains(query, ignoreCase = true) }
+        .sortedWith(
+            compareBy<SlateTodoItem> { it.sortOrder ?: Double.MAX_VALUE }
+                .thenBy(SlateTodoItem::createdAt)
+        )
+        .toList()
+
+    val taskSections = buildTaskSections(visibleItems, today, zone)
+
+    return SlateUiState(
+        archive = archive,
+        selectedGroupID = selectedGroupID,
+        filter = filter,
+        search = search,
+        selectedItemID = selectedItemID,
+        themeMode = themeMode,
+        message = message,
+        remindersEnabled = remindersEnabled,
+        sync = sync,
+        groups = groups,
+        visibleItems = visibleItems,
+        taskSections = taskSections,
+        groupPendingCounts = groupPendingCounts,
+        totalCount = activeItems.size,
+        pendingCount = activeItems.count { !it.isCompleted },
+        selectedGroupPendingCount = groupPendingCounts[selectedGroupID] ?: 0
+    )
+}
+
+internal fun buildTaskSections(
+    visibleItems: List<SlateTodoItem>,
+    today: LocalDate = LocalDate.now(),
+    zone: ZoneId = ZoneId.systemDefault()
+): List<SlateTaskSection> {
+    fun section(key: String, title: String, predicate: (SlateTodoItem) -> Boolean) =
+        SlateTaskSection(key, title, visibleItems.filter(predicate))
+
+    return buildList {
+        val overdue = section("overdue", "已逾期") { item ->
+            !item.isCompleted && item.dueDate
+                ?.atZone(zone)
+                ?.toLocalDate()
+                ?.isBefore(today) == true
         }
+        val todaySection = section("today", "今天") { item ->
+            !item.isCompleted && item.dueDate
+                ?.atZone(zone)
+                ?.toLocalDate() == today
+        }
+        val upcoming = section("upcoming", "接下来") { item ->
+            !item.isCompleted && item.dueDate
+                ?.atZone(zone)
+                ?.toLocalDate()
+                ?.isAfter(today) == true
+        }
+        val noDate = section("no-date", "无日期") { item ->
+            !item.isCompleted && item.dueDate == null
+        }
+        val completed = section("completed", "已完成") { it.isCompleted }
+        listOf(overdue, todaySection, upcoming, noDate, completed)
+            .filterTo(this) { it.items.isNotEmpty() }
+    }
 }
 
 data class SyncSettingsUiState(
@@ -129,7 +215,7 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
         syncSettings
     ) { values ->
         @Suppress("UNCHECKED_CAST")
-        SlateUiState(
+        buildSlateUiState(
             archive = values[0] as SlateArchive,
             selectedGroupID = values[1] as String,
             filter = values[2] as TodoFilter,
@@ -143,9 +229,14 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
-        SlateUiState(
+        buildSlateUiState(
             archive = repository.archive.value,
             selectedGroupID = selectedGroupID.value,
+            filter = filter.value,
+            search = search.value,
+            selectedItemID = selectedItemID.value,
+            themeMode = themeMode.value,
+            message = message.value,
             remindersEnabled = remindersEnabled.value,
             sync = syncSettings.value
         )
@@ -157,7 +248,10 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
                 if (archive.groups.none { it.id == selectedGroupID.value }) {
                     selectedGroupID.value = archive.groups.first().id
                 }
-                app.reminderScheduler.sync(archive.items)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    app.reminderScheduler.sync(archive.items)
+                }
+                SlateWidgetProvider.requestUpdate(app)
             }
         }
     }
@@ -182,7 +276,7 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setTheme(value: SlateThemeMode) {
         themeMode.value = value
-        preferences.edit().putString("theme_mode", value.name).apply()
+        preferences.edit { putString("theme_mode", value.name) }
     }
 
     fun addTodo(title: String, dueDate: Instant?) = launchMutation {
@@ -205,6 +299,7 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
         repository.deleteTodo(id)
         selectedItemID.value = null
     }
+    fun restoreTodo(id: String) = launchMutation { repository.restoreTodo(id) }
     fun moveTodo(id: String, groupID: String) = launchMutation {
         repository.moveTodo(id, groupID)
         selectedItemID.value = null
@@ -248,10 +343,10 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     client.signIn(email, password)
                 }
-                preferences.edit()
-                    .putString("sync_project_url", configuration.normalizedURL)
-                    .putString("sync_publishable_key", publishableKey.trim())
-                    .apply()
+                preferences.edit {
+                    putString("sync_project_url", configuration.normalizedURL)
+                    putString("sync_publishable_key", publishableKey.trim())
+                }
                 if (session == null) {
                     syncSettings.value = SyncSettingsUiState(
                         projectURL = configuration.normalizedURL,
@@ -320,7 +415,7 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
         if (!current.isConfigured || !current.isSignedIn || remoteRefreshJob != null) return
         remoteRefreshJob = viewModelScope.launch {
             while (true) {
-                delay(5_000)
+                delay(REMOTE_POLL_INTERVAL_MS)
                 refreshFromRemote()
             }
         }
@@ -410,11 +505,16 @@ class SlateViewModel(application: Application) : AndroidViewModel(application) {
         if (!current.isConfigured || !current.isSignedIn) return
         autoSyncJob?.cancel()
         autoSyncJob = viewModelScope.launch {
-            delay(1_500)
+            delay(LOCAL_SYNC_DEBOUNCE_MS)
             while (syncSettings.value.isSyncing || isRefreshingRemote) {
                 delay(250)
             }
             syncNow(announcesSuccess = false)
         }
+    }
+
+    private companion object {
+        const val REMOTE_POLL_INTERVAL_MS = 5_000L
+        const val LOCAL_SYNC_DEBOUNCE_MS = 600L
     }
 }

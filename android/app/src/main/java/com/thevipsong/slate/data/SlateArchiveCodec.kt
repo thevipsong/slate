@@ -17,11 +17,11 @@ object SlateArchiveCodec {
         val archive = try {
             json.decodeFromString<SlateArchive>(raw)
         } catch (error: SerializationException) {
-            throw IllegalArgumentException("文件不是有效的 Slate 待办数据。", error)
+            throw IllegalArgumentException("文件不是有效的序事待办数据。", error)
         }
 
         require(archive.version == SlateArchive.CURRENT_VERSION) {
-            "暂不支持 Slate v${archive.version} 数据。"
+            "暂不支持序事（Slate v${archive.version}）数据。"
         }
         return normalize(archive)
     }

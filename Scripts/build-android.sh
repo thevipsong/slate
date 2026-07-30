@@ -27,6 +27,6 @@ mkdir -p "$output_dir"
 )
 
 cp "$android_root/app/build/outputs/apk/debug/app-debug.apk" \
-  "$output_dir/Slate-Android-debug.apk"
+  "$output_dir/序事-Android-debug.apk"
 
-echo "Android APK: $output_dir/Slate-Android-debug.apk"
+echo "Android APK: $output_dir/序事-Android-debug.apk"

@@ -15,12 +15,14 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -38,6 +40,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -55,7 +58,6 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -64,6 +66,10 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -76,7 +82,6 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -89,9 +94,12 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -106,6 +114,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -120,12 +129,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -158,14 +173,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun SlateScreen(
     state: SlateUiState,
-    viewModel: SlateViewModel
+    viewModel: SlateViewModel,
+    quickAddFocusRequest: Long = 0L
 ) {
     val snackbarHost = remember { SnackbarHostState() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showAddGroup by rememberSaveable { mutableStateOf(false) }
-    var showAddTodo by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showSyncSetup by rememberSaveable { mutableStateOf(false) }
     var groupToManage by remember { mutableStateOf<SlateTodoGroup?>(null) }
@@ -180,6 +195,21 @@ fun SlateScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted -> viewModel.setRemindersEnabled(granted) }
     val context = LocalContext.current
+    val deleteWithUndo: (String) -> Unit = { id ->
+        viewModel.deleteTodo(id)
+        coroutineScope.launch {
+            snackbarHost.currentSnackbarData?.dismiss()
+            val result = snackbarHost.showSnackbar(
+                message = "任务已删除",
+                actionLabel = "撤销",
+                withDismissAction = true,
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.restoreTodo(id)
+            }
+        }
+    }
 
     LaunchedEffect(state.message) {
         state.message?.let {
@@ -188,43 +218,31 @@ fun SlateScreen(
         }
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = true,
-        drawerContent = {
-            GroupDrawer(
-                state = state,
-                onSelect = { groupID ->
-                    viewModel.selectGroup(groupID)
-                    coroutineScope.launch { drawerState.close() }
-                },
-                onManage = {
-                    groupToManage = it
-                    coroutineScope.launch { drawerState.close() }
-                },
-                onAdd = {
-                    showAddGroup = true
-                    coroutineScope.launch { drawerState.close() }
-                }
-            )
-        }
-    ) {
+    val selectGroup: (String) -> Unit = { groupID ->
+        viewModel.selectGroup(groupID)
+        coroutineScope.launch { drawerState.close() }
+    }
+    val manageGroup: (SlateTodoGroup) -> Unit = {
+        groupToManage = it
+        coroutineScope.launch { drawerState.close() }
+    }
+    val addGroup: () -> Unit = {
+        showAddGroup = true
+        coroutineScope.launch { drawerState.close() }
+    }
+    val homeContent: @Composable (Boolean) -> Unit = { showGroupButton ->
         Scaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
             containerColor = MaterialTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0),
             snackbarHost = { SnackbarHost(snackbarHost) },
-            floatingActionButton = {
-                FloatingActionButton(
-                    onClick = { showAddTodo = true },
-                    modifier = Modifier
-                        .navigationBarsPadding()
-                        .padding(end = 8.dp, bottom = 8.dp)
-                        .semantics { contentDescription = "添加新任务" },
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                }
+            bottomBar = {
+                QuickAddBar(
+                    focusRequest = quickAddFocusRequest,
+                    onAdd = viewModel::addTodo
+                )
             }
         ) { contentPadding ->
             Box(
@@ -245,12 +263,11 @@ fun SlateScreen(
                     Modifier
                         .fillMaxSize()
                         .statusBarsPadding()
-                        .navigationBarsPadding()
-                        .imePadding()
                 ) {
                     SlateHeader(
                         state = state,
                         searchActive = showSearch || state.search.isNotBlank(),
+                        showGroupButton = showGroupButton,
                         onOpenGroups = { coroutineScope.launch { drawerState.open() } },
                         onSearch = { showSearch = !showSearch },
                         onSettings = { showSettings = true }
@@ -281,9 +298,9 @@ fun SlateScreen(
                         )
                     } else {
                         TodoList(
-                            items = state.visibleItems,
+                            sections = state.taskSections,
                             onToggle = viewModel::toggleTodo,
-                            onDelete = viewModel::deleteTodo,
+                            onDelete = deleteWithUndo,
                             onReorder = viewModel::reorderTodo,
                             onEdit = { item ->
                                 viewModel.selectTodo(item.id)
@@ -297,14 +314,46 @@ fun SlateScreen(
         }
     }
 
-    if (showAddTodo) {
-        AddTodoSheet(
-            onDismiss = { showAddTodo = false },
-            onAdd = { title, dueDate ->
-                viewModel.addTodo(title, dueDate)
-                showAddTodo = false
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (maxWidth >= 840.dp) {
+            Row(Modifier.fillMaxSize()) {
+                PermanentGroupPane(
+                    state = state,
+                    onSelect = selectGroup,
+                    onManage = manageGroup,
+                    onAdd = addGroup
+                )
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxSize(),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .widthIn(max = 920.dp)
+                    ) {
+                        homeContent(false)
+                    }
+                }
             }
-        )
+        } else {
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                gesturesEnabled = true,
+                drawerContent = {
+                    GroupDrawer(
+                        state = state,
+                        onSelect = selectGroup,
+                        onManage = manageGroup,
+                        onAdd = addGroup
+                    )
+                }
+            ) {
+                homeContent(true)
+            }
+        }
     }
 
     editingItem?.let { item ->
@@ -328,7 +377,7 @@ fun SlateScreen(
                     editingItem = null
                 },
                 onDelete = {
-                    viewModel.deleteTodo(currentItem.id)
+                    deleteWithUndo(currentItem.id)
                     editingItem = null
                 }
             )
@@ -414,23 +463,26 @@ fun SlateScreen(
 private fun SlateHeader(
     state: SlateUiState,
     searchActive: Boolean,
+    showGroupButton: Boolean,
     onOpenGroups: () -> Unit,
     onSearch: () -> Unit,
     onSettings: () -> Unit
 ) {
-    val date = remember {
-        LocalDate.now().format(
-            DateTimeFormatter.ofPattern("M月d日 E", Locale.SIMPLIFIED_CHINESE)
-        )
-    }
+    val date = LocalDate.now().format(
+        DateTimeFormatter.ofPattern("M月d日 E", Locale.SIMPLIFIED_CHINESE)
+    )
     Row(
         Modifier
             .fillMaxWidth()
             .padding(start = 4.dp, top = 8.dp, end = 4.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onOpenGroups, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Default.Menu, contentDescription = "打开分组")
+        if (showGroupButton) {
+            IconButton(onClick = onOpenGroups, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.Menu, contentDescription = "打开分组")
+            }
+        } else {
+            Spacer(Modifier.width(12.dp))
         }
         Column(Modifier.weight(1f)) {
             val selectedGroup = state.groups.firstOrNull { it.id == state.selectedGroupID }
@@ -485,75 +537,106 @@ private fun GroupDrawer(
             .navigationBarsPadding(),
         drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)
     ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp)
-        ) {
-            Text(
-                "Slate",
-                modifier = Modifier.padding(start = 16.dp, top = 18.dp),
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "选择分组",
-                modifier = Modifier.padding(start = 16.dp, top = 2.dp, bottom = 18.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp
-            )
-            state.groups.forEach { group ->
-                val selected = group.id == state.selectedGroupID
-                val pendingCount = state.archive.items.count {
-                    !it.isDeleted && !it.isCompleted && it.groupID == group.id
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    NavigationDrawerItem(
-                        modifier = Modifier.weight(1f),
-                        selected = selected,
-                        onClick = { onSelect(group.id) },
-                        icon = {
-                            Icon(Icons.Default.Folder, contentDescription = null)
-                        },
-                        label = {
-                            Text(
-                                group.name,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontWeight = if (selected) {
-                                    FontWeight.SemiBold
-                                } else FontWeight.Medium
-                            )
-                        },
-                        badge = {
-                            Text(pendingCount.toString())
-                        }
-                    )
-                    IconButton(
-                        onClick = { onManage(group) },
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.MoreHoriz,
-                            contentDescription = "管理分组",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-            HorizontalDivider(Modifier.padding(vertical = 12.dp))
-            OutlinedButton(
-                onClick = onAdd,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
+        GroupListContent(state, onSelect, onManage, onAdd)
+    }
+}
+
+@Composable
+private fun PermanentGroupPane(
+    state: SlateUiState,
+    onSelect: (String) -> Unit,
+    onManage: (SlateTodoGroup) -> Unit,
+    onAdd: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .width(292.dp)
+            .fillMaxSize(),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp
+    ) {
+        GroupListContent(state, onSelect, onManage, onAdd)
+    }
+}
+
+@Composable
+private fun GroupListContent(
+    state: SlateUiState,
+    onSelect: (String) -> Unit,
+    onManage: (SlateTodoGroup) -> Unit,
+    onAdd: () -> Unit
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp)
+    ) {
+        Text(
+            "序事",
+            modifier = Modifier.padding(start = 16.dp, top = 18.dp),
+            fontSize = 24.sp,
+            lineHeight = 30.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            "Slate · 分组",
+            modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 20.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        state.groups.forEach { group ->
+            val selected = group.id == state.selectedGroupID
+            val pendingCount = state.groupPendingCounts[group.id] ?: 0
+            Row(
+                modifier = Modifier.padding(end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("新建分组")
+                NavigationDrawerItem(
+                    modifier = Modifier.weight(1f),
+                    selected = selected,
+                    onClick = { onSelect(group.id) },
+                    icon = {
+                        Icon(Icons.Outlined.Folder, contentDescription = null)
+                    },
+                    label = {
+                        Text(
+                            group.name,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = if (selected) {
+                                FontWeight.SemiBold
+                            } else FontWeight.Medium
+                        )
+                    },
+                    badge = { Text(pendingCount.toString()) }
+                )
+                IconButton(
+                    onClick = { onManage(group) },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        Icons.Default.MoreHoriz,
+                        contentDescription = "管理${group.name}分组",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
+        }
+        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+        OutlinedButton(
+            onClick = onAdd,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("新建分组")
         }
     }
 }
@@ -596,6 +679,140 @@ private fun GroupManageDialog(
             }
         }
     )
+}
+
+@Composable
+private fun QuickAddBar(
+    focusRequest: Long,
+    onAdd: (String, Instant?) -> Unit
+) {
+    var title by rememberSaveable { mutableStateOf("") }
+    var dueDate by rememberSaveable { mutableStateOf<Instant?>(null) }
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    fun submit() {
+        val cleanTitle = title.trim()
+        if (cleanTitle.isEmpty()) return
+        onAdd(cleanTitle, dueDate)
+        title = ""
+        dueDate = null
+        focusManager.clearFocus()
+        keyboardController?.hide()
+    }
+
+    LaunchedEffect(focusRequest) {
+        if (focusRequest > 0L) {
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            dueDate?.let {
+                DueDateLabel(
+                    dueDate = it,
+                    onClear = { dueDate = null }
+                )
+            }
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { isFocused = it.isFocused }
+                    .border(
+                        width = 1.dp,
+                        color = if (isFocused) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.outline
+                        },
+                        shape = RoundedCornerShape(18.dp)
+                    ),
+                placeholder = { Text("添加一件事…") },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                trailingIcon = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { showDatePicker = true },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.CalendarMonth,
+                                contentDescription = "设置到期日期",
+                                tint = if (dueDate == null) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                }
+                            )
+                        }
+                        IconButton(
+                            enabled = title.isNotBlank(),
+                            onClick = { submit() },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Check,
+                                contentDescription = "添加任务",
+                                tint = if (title.isNotBlank()) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                                }
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(18.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    disabledBorderColor = Color.Transparent,
+                    errorBorderColor = Color.Transparent,
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { submit() })
+            )
+        }
+    }
+
+    if (showDatePicker) {
+        SlateDatePickerDialog(
+            initial = dueDate,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                dueDate = it
+                showDatePicker = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -743,7 +960,7 @@ private fun CompactFilterBar(
                 Surface(
                     modifier = Modifier
                         .weight(1f)
-                        .height(42.dp)
+                        .height(48.dp)
                         .semantics {
                             role = Role.Tab
                             this.selected = isSelected
@@ -762,7 +979,7 @@ private fun CompactFilterBar(
                                 MaterialTheme.colorScheme.primary
                             } else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             maxLines = 1
                         )
                     }
@@ -774,7 +991,7 @@ private fun CompactFilterBar(
 
 @Composable
 private fun TodoList(
-    items: List<SlateTodoItem>,
+    sections: List<SlateTaskSection>,
     onToggle: (String) -> Unit,
     onDelete: (String) -> Unit,
     onReorder: (String, String) -> Unit,
@@ -784,79 +1001,141 @@ private fun TodoList(
     val listState = rememberLazyListState()
     val haptics = LocalHapticFeedback.current
     var draggingID by remember { mutableStateOf<String?>(null) }
-    var dragOffset by remember { mutableStateOf(0f) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
     var lastTargetID by remember { mutableStateOf<String?>(null) }
+    var displaySections by remember { mutableStateOf(sections) }
+
+    LaunchedEffect(sections, draggingID) {
+        if (draggingID == null) displaySections = sections
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         state = listState,
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 132.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        itemsIndexed(items, key = { _, item -> item.id }) { _, item ->
-            val isDragging = draggingID == item.id
-            Box(
-                Modifier
-                    .zIndex(if (isDragging) 2f else 0f)
-                    .graphicsLayer {
-                        translationY = if (isDragging) dragOffset else 0f
-                        scaleX = if (isDragging) 1.015f else 1f
-                        scaleY = if (isDragging) 1.015f else 1f
-                        alpha = if (isDragging) 0.96f else 1f
-                    }
-                    .pointerInput(item.id, items.map(SlateTodoItem::id)) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = {
-                                draggingID = item.id
-                                lastTargetID = item.id
-                                dragOffset = 0f
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            },
-                            onDragCancel = {
-                                draggingID = null
-                                lastTargetID = null
-                                dragOffset = 0f
-                            },
-                            onDragEnd = {
-                                draggingID = null
-                                lastTargetID = null
-                                dragOffset = 0f
-                            },
-                            onDrag = { change, amount ->
-                                change.consume()
-                                dragOffset += amount.y
-                                val layoutInfo = listState.layoutInfo
-                                val sourceInfo = layoutInfo.visibleItemsInfo
-                                    .firstOrNull { it.key == item.id }
-                                    ?: return@detectDragGesturesAfterLongPress
-                                val draggedCenter =
-                                    sourceInfo.offset + sourceInfo.size / 2f + dragOffset
-                                val target = layoutInfo.visibleItemsInfo.firstOrNull { visible ->
-                                    visible.key != item.id &&
-                                        draggedCenter >= visible.offset &&
-                                        draggedCenter <= visible.offset + visible.size
-                                }
-                                val targetID = target?.key as? String
-                                if (targetID != null && targetID != lastTargetID) {
-                                    onReorder(item.id, targetID)
-                                    lastTargetID = targetID
-                                    dragOffset = 0f
-                                    haptics.performHapticFeedback(
-                                        HapticFeedbackType.TextHandleMove
-                                    )
-                                }
-                            }
-                        )
-                    }
-            ) {
-                SwipeTodoCard(
-                    item = item,
-                    onToggle = { onToggle(item.id) },
-                    onDelete = { onDelete(item.id) },
-                    onEdit = { onEdit(item) }
+        displaySections.forEach { section ->
+            item(key = "section:${section.key}", contentType = "section-header") {
+                TaskSectionHeader(
+                    title = section.title,
+                    count = section.items.size
                 )
             }
+            itemsIndexed(
+                items = section.items,
+                key = { _, item -> item.id },
+                contentType = { _, _ -> "task" }
+            ) { _, item ->
+                val isDragging = draggingID == item.id
+                val validTargetIDs = section.items.mapTo(mutableSetOf(), SlateTodoItem::id)
+                val dragModifier = Modifier.pointerInput(item.id, validTargetIDs) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = {
+                            draggingID = item.id
+                            lastTargetID = item.id
+                            dragOffset = 0f
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        },
+                        onDragCancel = {
+                            draggingID = null
+                            lastTargetID = null
+                            dragOffset = 0f
+                        },
+                        onDragEnd = {
+                            val targetID = lastTargetID
+                            if (targetID != null && targetID != item.id) {
+                                onReorder(item.id, targetID)
+                            }
+                            draggingID = null
+                            lastTargetID = null
+                            dragOffset = 0f
+                        },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            dragOffset += amount.y
+                            val sourceInfo = listState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { it.key == item.id }
+                                ?: return@detectDragGesturesAfterLongPress
+                            val draggedCenter =
+                                sourceInfo.offset + sourceInfo.size / 2f + dragOffset
+                            val target = listState.layoutInfo.visibleItemsInfo.firstOrNull { visible ->
+                                val key = visible.key as? String
+                                key != item.id &&
+                                    key in validTargetIDs &&
+                                    draggedCenter >= visible.offset &&
+                                    draggedCenter <= visible.offset + visible.size
+                            }
+                            val targetID = target?.key as? String
+                            if (targetID != null && targetID != lastTargetID) {
+                                displaySections = displaySections.moveTask(item.id, targetID)
+                                lastTargetID = targetID
+                                dragOffset = 0f
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        }
+                    )
+                }
+                Box(
+                    Modifier
+                        .animateItem()
+                        .zIndex(if (isDragging) 2f else 0f)
+                        .graphicsLayer {
+                            translationY = if (isDragging) dragOffset else 0f
+                            scaleX = if (isDragging) 1.015f else 1f
+                            scaleY = if (isDragging) 1.015f else 1f
+                            alpha = if (isDragging) 0.96f else 1f
+                        }
+                ) {
+                    SwipeTodoCard(
+                        item = item,
+                        onToggle = { onToggle(item.id) },
+                        onDelete = { onDelete(item.id) },
+                        onEdit = { onEdit(item) },
+                        modifier = dragModifier
+                    )
+                }
+            }
         }
+    }
+}
+
+private fun List<SlateTaskSection>.moveTask(
+    sourceID: String,
+    targetID: String
+): List<SlateTaskSection> = map { section ->
+    val sourceIndex = section.items.indexOfFirst { it.id == sourceID }
+    val targetIndex = section.items.indexOfFirst { it.id == targetID }
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex == targetIndex) {
+        section
+    } else {
+        val reordered = section.items.toMutableList()
+        val moved = reordered.removeAt(sourceIndex)
+        reordered.add(targetIndex, moved)
+        section.copy(items = reordered)
+    }
+}
+
+@Composable
+private fun TaskSectionHeader(title: String, count: Int) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, top = 12.dp, end = 4.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            title,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            count.toString(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp
+        )
     }
 }
 
@@ -865,7 +1144,8 @@ private fun SwipeTodoCard(
     item: SlateTodoItem,
     onToggle: () -> Unit,
     onDelete: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var actionLocked by remember(item.id) { mutableStateOf(false) }
     val triggerToggle = {
@@ -904,6 +1184,24 @@ private fun SwipeTodoCard(
     )
 
     SwipeToDismissBox(
+        modifier = Modifier.semantics {
+            customActions = listOf(
+                CustomAccessibilityAction(
+                    label = if (item.isCompleted) "恢复为待办" else "标记完成",
+                    action = {
+                        triggerToggle()
+                        true
+                    }
+                ),
+                CustomAccessibilityAction(
+                    label = "删除任务",
+                    action = {
+                        onDelete()
+                        true
+                    }
+                )
+            )
+        },
         state = dismissState,
         backgroundContent = {
             val direction = dismissState.dismissDirection
@@ -954,11 +1252,11 @@ private fun SwipeTodoCard(
                 .animateContentSize()
                 .clickable(onClick = onEdit),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
             ),
             border = BorderStroke(
                 1.dp,
-                MaterialTheme.colorScheme.outline.copy(alpha = 0.58f)
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.78f)
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             shape = RoundedCornerShape(16.dp)
@@ -966,13 +1264,13 @@ private fun SwipeTodoCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .defaultMinSize(minHeight = 72.dp)
-                    .padding(start = 10.dp, top = 8.dp, end = 14.dp, bottom = 8.dp),
+                    .defaultMinSize(minHeight = 80.dp)
+                    .padding(start = 10.dp, top = 12.dp, end = 20.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
                     onClick = triggerToggle,
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         if (item.isCompleted) Icons.Default.CheckCircle
@@ -987,7 +1285,7 @@ private fun SwipeTodoCard(
                     Text(
                         item.title,
                         fontWeight = FontWeight.Medium,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         textDecoration = if (item.isCompleted) {
@@ -999,6 +1297,14 @@ private fun SwipeTodoCard(
                         DueDateText(dueDate = it, completed = item.isCompleted)
                     }
                 }
+                Icon(
+                    Icons.Rounded.DragIndicator,
+                    contentDescription = "长按拖动排序",
+                    modifier = modifier
+                        .size(48.dp)
+                        .padding(12.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                )
             }
         }
     }
@@ -1368,12 +1674,12 @@ private fun EmptyState(
             }
             Spacer(Modifier.height(14.dp))
             Text(
-                if (hasSearch) "没有匹配的待办" else "熟能生巧。",
+                if (hasSearch) "没有匹配的待办" else "记下每件事，按自己的节奏完成。",
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 17.sp
             )
             Text(
-                if (hasSearch) "换个关键词试试" else "点击右下角 + 添加下一件事",
+                if (hasSearch) "换个关键词试试" else "在下方输入，记下下一件事",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp
             )
@@ -1467,7 +1773,7 @@ private fun SettingsSheet(
             HorizontalDivider(Modifier.padding(vertical = 20.dp))
             Text("数据", fontWeight = FontWeight.SemiBold)
             Text(
-                "与 macOS 版共用 Slate v3 JSON 格式",
+                "与 macOS 版共用序事（Slate v3）JSON 格式",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp
             )
@@ -1603,7 +1909,7 @@ private fun SyncSetupDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "Slate Cloud 已配置，账户数据通过行级安全策略隔离。",
+                    "序事云同步已配置，账户数据通过行级安全策略隔离。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )

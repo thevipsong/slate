@@ -13,5 +13,5 @@ cd "$project_root"
 supabase start \
   -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 
-echo "Slate 本地同步后端已启动。"
+echo "序事本地同步后端已启动。"
 echo "运行 ./Scripts/run-sync-integration.sh 可验证 Auth、RLS 和版本冲突流程。"

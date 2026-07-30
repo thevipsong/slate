@@ -53,11 +53,37 @@ enum AppFontScale: Int, CaseIterable, Identifiable {
     var offset: CGFloat { CGFloat(rawValue) }
 }
 
+/// 菜单栏面板保持固定宽度，通过三档高度兼顾小屏与长列表。
+enum MenuBarPanelSize: String, CaseIterable, Identifiable {
+    case compact
+    case regular
+    case roomy
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .compact: "紧凑"
+        case .regular: "标准"
+        case .roomy: "宽敞"
+        }
+    }
+
+    var height: CGFloat {
+        switch self {
+        case .compact: 420
+        case .regular: 520
+        case .roomy: 620
+        }
+    }
+}
+
 /// 全局主题：字体族 + 字号档。挂在 @StateObject + .environmentObject 让子视图读取。
 final class AppTheme: ObservableObject {
     @AppStorage("theme.fontFamily") var fontFamilyRaw: String = AppFontFamily.rounded.rawValue
     @AppStorage("theme.fontScale") var fontScaleRaw: Int = AppFontScale.regular.rawValue
     @AppStorage("theme.colorScheme") var colorSchemeRaw: String = "system"
+    @AppStorage("menuBar.panelSize") var menuBarPanelSizeRaw: String = MenuBarPanelSize.regular.rawValue
     /// 天气城市（默认蚌埠，目标用户所在地）；本地可选，不申请定位权限
     @AppStorage("theme.weatherCityID") var weatherCityID: String = "bengbu"
 
@@ -93,6 +119,14 @@ final class AppTheme: ObservableObject {
 
     var fontScale: AppFontScale {
         AppFontScale(rawValue: fontScaleRaw) ?? .regular
+    }
+
+    var menuBarPanelSize: MenuBarPanelSize {
+        MenuBarPanelSize(rawValue: menuBarPanelSizeRaw) ?? .regular
+    }
+
+    var menuBarPanelHeight: CGFloat {
+        menuBarPanelSize.height
     }
 
     /// 字号 = 基准 + 字号档偏移

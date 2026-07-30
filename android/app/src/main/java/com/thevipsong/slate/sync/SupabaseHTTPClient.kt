@@ -67,18 +67,19 @@ class SupabaseHTTPClient(
             ?: error("同步服务没有返回有效记录。")
     }
 
-    suspend fun fetchArchive(
+    suspend fun fetchRevision(
         session: StoredSupabaseSession
-    ): CloudArchiveRecord? {
+    ): Long? {
         val raw = requestRaw(
             method = "GET",
             path = "/rest/v1/slate_archives" +
-                "?select=revision,archive,device_id,updated_at&limit=1",
+                "?select=revision&limit=1",
             body = null,
             accessToken = session.accessToken
         )
-        return SlateArchiveCodec.json.decodeFromString<List<CloudArchiveRecord>>(raw)
+        return SlateArchiveCodec.json.decodeFromString<List<CloudRevisionRecord>>(raw)
             .firstOrNull()
+            ?.revision
     }
 
     private suspend fun request(
